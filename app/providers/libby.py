@@ -20,6 +20,22 @@ from ..models import Availability, Scope
 from .base import ProviderError, RateLimiter
 
 THUNDER = "https://thunder.api.overdrive.com/v2"
+
+# Libby's own URL vocabulary for a format-scoped shelf. The id already picks the
+# edition — audiobook and ebook are separate records with separate ids — but a
+# link that lands in "everything" arrives in a context holding both editions of
+# the work, and Libby then opens whichever it treats as primary. Naming the
+# format in the path keeps an audiobook link on the audiobook.
+LIBBY_COLLECTION = {
+    "audiobook-overdrive": "format-audiobook",
+    "ebook-overdrive": "format-ebook",
+}
+
+
+def title_url(scope_key: str, title_id: str, fmt: str) -> str:
+    """The Libby deep link for one title, in one format, at one library."""
+    shelf = LIBBY_COLLECTION.get(fmt, "everything")
+    return f"https://libbyapp.com/library/{scope_key}/{shelf}/page-1/{title_id}"
 CLIENT_ID = "dewey"  # the client id Libby's own web app sends
 HEADERS = {
     "User-Agent": "shelfwatch/1.0 (personal library availability tool)",
@@ -182,7 +198,7 @@ class LibbyProvider:
         media_id = str(best.get("id") or best.get("titleId") or "")
         if media_id:
             av.title_id = media_id
-            av.url = f"https://libbyapp.com/library/{scope.key}/everything/page-1/{media_id}"
+            av.url = title_url(scope.key, media_id, fmt)
 
         av.duration_seconds = _duration_of(best)
         info = _availability_of(best)
@@ -291,7 +307,7 @@ class LibbyProvider:
         )
         if title_id:
             av.title_id = str(title_id)
-            av.url = f"https://libbyapp.com/library/{scope.key}/everything/page-1/{title_id}"
+            av.url = title_url(scope.key, title_id, fmt)
         av.duration_seconds = _duration_of(raw or {})
         info = _availability_of(raw or {})
         av.available_copies = info["available"]

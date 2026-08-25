@@ -135,21 +135,21 @@ async def lookup_chunk(
     which one waits.
     """
     formats = list(formats) or ["audiobook-overdrive"]
-    merged: dict[str, BookResult] = {}
+    # Merged by position, not by book key. Two different titles can normalise to
+    # the same key — "Piranesi" and "Piranesi: A Novel" both give
+    # "piranesi|clarke" — and keying by it returned fewer results than there
+    # were books. The job runner pairs results with indices by zip(), so a
+    # short list silently shifted every later result onto the wrong book.
+    # _lookup_chunk_one returns exactly one result per input book, in order.
+    merged: list[BookResult] = []
     for fmt in formats:
-        for result in await _lookup_chunk_one(books, scopes, [fmt], threshold, refresh, stats):
-            existing = merged.get(result.key)
-            if existing is None:
-                merged[result.key] = result
-            else:
-                existing.results.extend(result.results)
-    # Input order, not dict order: the caller pages results by position.
-    seen = []
-    for b in books:
-        key = to_book(b).key
-        if key in merged and merged[key] not in seen:
-            seen.append(merged[key])
-    return seen
+        got = await _lookup_chunk_one(books, scopes, [fmt], threshold, refresh, stats)
+        if not merged:
+            merged = got
+            continue
+        for base, extra in zip(merged, got):
+            base.results.extend(extra.results)
+    return merged
 
 
 async def _lookup_chunk_one(
@@ -396,22 +396,3 @@ async def lookup_all(
             books[start:start + size], scopes, formats, threshold, refresh, stats,
         ))
     return out
-
-
-# ------------------------------------------------------------- grouping
-
-def group_results(results: list[BookResult], short_wait_days: int) -> dict:
-    groups = {"available": [], "short": [], "long": [], "none": []}
-    for r in results:
-        rank, wait = r.best_rank, r.best_wait
-        if rank == 0:
-            groups["available"].append(r)
-        elif rank == 1 and isinstance(wait, int) and wait <= short_wait_days:
-            groups["short"].append(r)
-        elif rank == 1:
-            groups["long"].append(r)
-        else:
-            groups["none"].append(r)
-    groups["short"].sort(key=lambda r: r.best_wait or 9999)
-    groups["long"].sort(key=lambda r: r.best_wait or 9999)
-    return groups

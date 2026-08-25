@@ -36,6 +36,11 @@ services:
       # Ceiling on a single upload.
       SHELFWATCHR_MAX_BOOKS: "5000"
 
+      # Closed beta: one shared password in front of the whole site, and no
+      # accounts to make. Both optional; unset the password and the site opens.
+      # SHELFWATCHR_BETA_PASSWORD: "the-word-testers-are-given"
+      # SHELFWATCHR_ACCOUNTS: "0"
+
       # Optional: email alerts. Without these, ntfy and webhooks still work.
       # SHELFWATCHR_SMTP_HOST: "smtp.example.com"
       # SHELFWATCHR_SMTP_PORT: "587"

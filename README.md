@@ -35,10 +35,14 @@ told to mark the cookie `Secure` or nobody stays signed in),
 addresses rather than one proxy IP), and `SHELFWATCHR_PUBLIC_URL` (so
 confirmation links point at the public name).
 
-**Make your account, then close the door:** `fly secrets set SHELFWATCHR_SIGNUPS=0`.
-Existing accounts keep working; nobody new can register. A public instance sends
-real traffic to OverDrive under your IP, and there's no reason to let strangers
-add to it.
+**Close the door behind you.** A public instance sends real traffic to OverDrive
+under your IP, and there's no reason to let strangers add to it. Two ways, and
+they compose:
+
+- `fly secrets set SHELFWATCHR_SIGNUPS=0` — existing accounts keep working,
+  nobody new can register.
+- `fly secrets set SHELFWATCHR_BETA_PASSWORD="something"` — nobody sees anything
+  at all until they type it. See [Closed beta](#closed-beta) below.
 
 Any host that runs a Dockerfile works the same way — Railway, Render, a €4 VPS
 with `docker compose up -d` behind Caddy. The only requirements are a persistent
@@ -91,9 +95,11 @@ SHELFWATCHR_MOCK=1 uvicorn app.main:app --port 8080
 
 ### Reaching it from outside the house
 
-The server has no login — anyone who can reach the port can use it, and anyone
-with a saved list's link can read that list. That's deliberate for a tool shared
-with a few friends, but **don't port-forward it to the open internet**. Use
+Accounts are on by default, but they're optional: anyone who can reach the port
+can use the tool without one, and anyone with a saved list's link can read that
+list. That's deliberate for a tool shared with a few friends, but **don't
+port-forward it to the open internet** — every lookup spends your IP's goodwill
+with OverDrive. Use
 Tailscale (install on the server, share the network with whoever should have
 access) or a Cloudflare Tunnel with Access in front.
 
@@ -115,9 +121,11 @@ N.K. Jemisin                                              ⌄
 Green means it's on the shelf at **at least one** of your libraries; yellow is
 the **shortest** wait across all of them. Which library that happens to be is a
 tap away — the chevron opens a per-library breakdown, with the queue behind each
-wait (people waiting, copies owned) and a small legend explaining the glyphs. On
-a desktop, hovering a row in that breakdown spells it out as a sentence:
-*"9 people are waiting for 4 copies"*.
+wait (people waiting, copies owned). On a desktop, hovering a row in that
+breakdown spells it out as a sentence: *"9 people are waiting for 4 copies"*, or
+*"Nobody is waiting, but the only copy is on loan"* when the queue is empty and
+the shelf still isn't — which is the one case the numbers alone read as a
+contradiction.
 
 The headline pill links straight to that book in Libby, at whichever library is
 offering the best terms — so borrowing is one tap, not two.
@@ -127,15 +135,41 @@ wait", or "Available · 3 copies".
 
 ## Using it
 
-1. **Pick your libraries.** Search by name, or paste the slug from your Libby URL
-   (`libbyapp.com/library/`**`queenslibrary`**). Remembered in your browser.
+1. **Pick your libraries.** Search by name, country, or paste the slug from your
+   Libby URL (`libbyapp.com/library/`**`queenslibrary`**). Remembered in your
+   browser. Search answers from a local directory — see below.
 2. **Drop in your CSV.** StoryGraph → Manage Account → Manage Your Data → Export.
    Goodreads → My Books → Import and Export → Export Library. Either works, the
    whole export is fine, and you choose which shelf to check.
-3. **Read the report.** Available now, short wait, longer wait — each entry
-   linking straight to the book in Libby.
+3. **Read the report.** Available now and Waitlist — each entry linking straight
+   to that book in Libby, in the format you're looking at.
 4. **Save it, and let it watch.** Saving gives you a link that works on any
    device and loads instantly, because the scheduled run has already done the work.
+
+### The library directory
+
+OverDrive's library endpoint ignores its own `query` parameter — asking it for
+"brooklyn" returns the same first page as asking it for nothing — so searching
+by name only ever worked if you already knew the library's exact slug. The fix
+is to keep the directory locally and search it here:
+
+```bash
+python tools/seed_libraries.py            # ~2,300 live libraries, a few minutes
+python tools/seed_libraries.py --enrich   # then fill in countries (slower)
+python tools/seed_libraries.py --all      # include Preview/Terminated entries
+```
+
+That walks the full 13,080-entry directory and keeps the ~17% marked `Live`;
+the rest are Preview, Terminated or Merged and lend nothing. Search then answers
+instantly, offline, and actually filters. Re-run it whenever you want a refresh
+— it upserts.
+
+`--enrich` is a second pass for the country column. The API carries no location
+field at all, in either the list or the per-library record, so a library's
+country is inferred from the hostnames it gives for itself and from unmistakable
+place names. Anything ambiguous is left blank on purpose: "Ontario", "Victoria"
+and "Washington" all exist in more than one country, and a wrong country is
+worse than none.
 
 ### Updating the list later
 
@@ -148,10 +182,15 @@ back next year it isn't compared against a reading from months ago.
 
 ### Filtering and sorting a long list
 
-Above the report there's a search box, a sort menu and a filter panel. The three
-sections stay put — *Available now*, *Short wait*, *Longer wait* — because
-whether you can have the book is still the first question; the sort you pick
-orders the books **inside** each section.
+Above the report there's a search box, a sort menu and a filter panel. The two
+sections stay put — *Available now* and *Waitlist* — because whether you can
+have the book today is still the first question; the sort you pick orders the
+books **inside** each section. Either section folds away from its heading when
+you want the other one to fill the screen.
+
+Waits used to be split into *Short* and *Longer* at an arbitrary line. They're
+one section now: it's the same decision either side of it — join the queue or
+don't — and every card already carries its own wait.
 
 Sort by shortest wait (the default), by when you added the book to your list,
 by length, by author surname, by title, or at random when you want the list to
@@ -237,6 +276,31 @@ and session cookies are 256-bit random values stored only as SHA-256 hashes: a
 copy of the database grants nobody a session and no working link. Session cookies
 are `HttpOnly` and `SameSite=Lax`, which is also what makes cross-site request
 forgery a non-event.
+
+### Closed beta
+
+Setting `SHELFWATCHR_BETA_PASSWORD` puts one shared password in front of the
+whole site. Every request that arrives without it — pages, API, static files —
+is turned away and lands on a form asking for it; only `/api/health` stays open,
+because a host that can't health-check the machine will decide it has died.
+Typing it right sets a cookie that lasts 30 days, and after that the app behaves
+exactly as it does with no gate at all.
+
+It is not an account. There is nothing to sign up for, everyone who gets in is
+the same anonymous visitor, and the password is the whole of the security: it is
+for handing a link to a dozen testers, not for keeping secrets from a determined
+stranger. Guesses are limited to ten per quarter hour per address, and the
+instance asks search engines to stay away for as long as the gate is up.
+
+The cookie is derived from the password, so **setting a new password signs
+everybody out** — that's how you end someone's access. Unset the variable and
+the site is open again.
+
+For a beta it pairs well with `SHELFWATCHR_ACCOUNTS=0`, which is what
+`fly.toml` ships with: one door to explain, no sign-in link anywhere in the
+interface, and lists reached by their slug the way they were before accounts
+existed. Nothing is lost by turning accounts back on later — the database is
+unchanged either way.
 
 ### The weekly email
 
@@ -417,15 +481,20 @@ app/
   notify.py       ntfy / webhook / email digest, confirmation and reset mail
   auth.py         password hashing, tokens, rate limiting — stdlib only
   accounts.py     sign up / in / out, confirm, reset, and the account's list
+  gate.py         the shared-password door in front of a closed beta
 web/              the frontend: no build step
   index.html      the app
   app.js          library picker, jobs, report, filters, sorting, account bar
   signin.html     sign in, create account, forgot, choose a new password
+  gate.html       the beta password form; self-contained, since /static is gated too
   signin.js       ← standalone, so the sign-in page doesn't load the whole app
   styles.css
+tools/
+  seed_libraries.py   fills the local library directory from OverDrive
 tests/
   test_app.py         end-to-end against the mock catalogue
   test_auth.py        accounts: hashing, sessions, enumeration, ownership
+  test_gate.py        the beta gate: what it blocks, and the cookie
   test_provider.py    the OverDrive client, against a mock transport
   ui_smoke.py         the report's wording and layout, in a browser
   reveal_check.py     hover and tap behaviour for the queue detail
@@ -436,7 +505,7 @@ tests/
 The three Python suites need no network:
 
 ```bash
-python tests/test_app.py && python tests/test_auth.py && python tests/test_provider.py
+python tests/test_app.py && python tests/test_auth.py && python tests/test_gate.py && python tests/test_provider.py
 ```
 
 The four browser suites need a server and Playwright:
@@ -478,6 +547,7 @@ All environment variables, all optional. `SHELFWATCH_*` (no R) still works.
 | `SHELFWATCHR_JOB_RETENTION_HOURS` | `48` | How long finished jobs are kept |
 | `SHELFWATCHR_MOCK` | `0` | Fake catalogue, no network |
 | `SHELFWATCHR_SMTP_*` | — | Email digest, and confirmation/reset mail |
+| `SHELFWATCHR_BETA_PASSWORD` | — | One shared password in front of the whole site. Empty means no gate |
 | `SHELFWATCHR_ACCOUNTS` | `1` | `0` turns accounts off entirely |
 | `SHELFWATCHR_SIGNUPS` | `1` | `0` closes new registrations, existing accounts unaffected |
 | `SHELFWATCHR_SECURE_COOKIES` | from `PUBLIC_URL` | Mark the session cookie `Secure` |

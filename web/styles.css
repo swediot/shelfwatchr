@@ -193,7 +193,23 @@ body.run-active { padding-bottom: 210px; }
 
 /* results */
 section.group { margin-top: 28px; }
-section.group > h2 { font-size: 1.05rem; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+section.group > h2 { font-size: 1.05rem; margin: 0 0 10px; }
+/* The heading doubles as the fold control, so it has to look like a heading and
+   behave like a button: full width, no chrome, the whole strip clickable. */
+.group-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: 0; padding: 2px 0; min-height: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.group-head:hover { color: var(--accent); }
+.group-head .chev {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; color: var(--muted);
+}
+.group-head .chev svg { width: 16px; height: 16px; display: block; transition: transform 0.18s ease; }
+section.group.shut .group-head .chev svg { transform: rotate(-90deg); }
+.group-head:hover .chev { color: inherit; }
+@media (prefers-reduced-motion: reduce) { .group-head .chev svg { transition: none; } }
 .count { font-size: 0.72rem; font-weight: 600; background: var(--none-bg); color: var(--none-ink); padding: 2px 8px; border-radius: 99px; }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
@@ -206,7 +222,7 @@ section.group > h2 { font-size: 1.05rem; margin: 0 0 10px; display: flex; align-
 .card h3 { margin: 0; font-size: 0.98rem; font-weight: 600; line-height: 1.3; }
 .card .byline { margin: 1px 0 0; color: var(--muted); font-size: 0.82rem; }
 .card .best { flex: 0 0 auto; text-decoration: none; }
-.card .best .pill { display: block; }
+.card .best .pill { display: block; min-width: 5.25rem; text-align: center; }
 
 .expand {
   /* 44px square: the smallest comfortable touch target, which matters more
@@ -215,6 +231,12 @@ section.group > h2 { font-size: 1.05rem; margin: 0 0 10px; display: flex; align-
   display: flex; align-items: center; justify-content: center;
   border: none; background: none; padding: 0;
   color: var(--muted); border-radius: 10px; cursor: pointer;
+}
+/* A card with a single library has no chevron, but it still has to occupy the
+   same width — otherwise its status pill sits 32px right of its neighbours'
+   and the column reads as ragged. Same box, nothing in it. */
+.expand-gap {
+  flex: 0 0 auto; width: 44px; height: 44px; margin: -10px -12px -10px 0;
 }
 .expand svg { width: 16px; height: 16px; transition: transform 0.18s ease; display: block; }
 .card.open .expand svg { transform: rotate(180deg); }
@@ -231,7 +253,12 @@ section.group > h2 { font-size: 1.05rem; margin: 0 0 10px; display: flex; align-
 }
 /* One row per library: name, status, then the queue detail. The name is the
    only part allowed to shrink, so the numbers never get truncated. */
-.lib { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; position: relative; }
+/* gap matches .card-head's, so the reserved slot below lines the row pills
+   up with the headline pill exactly rather than two pixels off. */
+.lib { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; position: relative; }
+/* The width .expand occupies in the head (44px button, -12px margin), with
+   no height of its own — a 44px-tall spacer would stretch the row. */
+.lib-gap { flex: 0 0 auto; width: 32px; }
 .lib a, .lib > span.static {
   display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0;
   text-decoration: none; color: inherit;
@@ -288,14 +315,6 @@ section.group > h2 { font-size: 1.05rem; margin: 0 0 10px; display: flex; align-
 .queue-part { display: inline-flex; align-items: center; gap: 3px; }
 .queue svg { width: 12px; height: 12px; fill: currentColor; display: block; }
 
-.legend {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin: 9px 0 0; font-size: 0.72rem; color: var(--muted); opacity: 0.85;
-}
-.legend .queue { cursor: default; }
-.legend-item { display: inline-flex; align-items: center; gap: 5px; }
-.legend-item svg { width: 12px; height: 12px; fill: currentColor; display: block; }
-
 .flag { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 
 .notice { border-radius: var(--radius); padding: 12px 16px; margin: 14px 0; font-size: 0.88rem; }
@@ -313,12 +332,8 @@ footer {
 footer p { margin: 0 0 10px; }
 footer .setting strong { color: var(--ink); font-weight: 600; }
 footer .setting button { font-size: 0.78rem; padding: 2px 4px; }
-.setting-why { display: block; margin-top: 4px; opacity: 0.85; }
+.setting-why { margin-left: 6px; opacity: 0.85; }   /* same line as the toggle; wraps on its own when narrow */
 
-/* The other way into Libby, at the bottom of an expanded card. */
-.alt-link { margin: 10px 0 0; font-size: 0.76rem; }
-.alt-link a { color: var(--accent); text-decoration: none; }
-.alt-link a:hover { text-decoration: underline; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 /* steps + results header + watch panel */
@@ -457,11 +472,12 @@ button.wide { width: 100%; justify-content: center; }
 .sent p { margin: 0 0 10px; }
 
 /* the signed-in strip on the main page */
+/* Sign-in links and the theme button share the header's right-hand end. */
+.header-actions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 .account-bar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  font-size: 0.85rem; color: var(--muted); margin: -6px 0 18px;
+  justify-content: flex-end; font-size: 0.85rem; color: var(--muted); margin: 0;
 }
 .account-bar .who { display: inline-flex; align-items: center; gap: 6px; }
 .account-bar .dot { width: 7px; height: 7px; border-radius: 99px; background: var(--ok-ink); }
-.account-bar .spacer { flex: 1 1 auto; }
 .account-bar button.link { font-size: 0.85rem; }

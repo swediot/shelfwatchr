@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import accounts
 from . import changes as changes_mod
-from . import jobs, notify, service, store
+from . import gate, jobs, notify, service, store
 from .config import settings
 from .csvimport import parse_reading_list
 from .models import LookupRequest, ProfileIn, Scope, WatchIn
@@ -86,6 +86,9 @@ async def block_cross_origin_writes(request: Request, call_next):
     return await call_next(request)
 
 
+app.middleware("http")(gate.middleware)
+
+app.include_router(gate.router)
 app.include_router(accounts.router)
 
 
@@ -262,6 +265,9 @@ async def job_status(job_id: str, after: int = 0, limit: int = 500):
         "done": job["done"],
         "total": job["total"],
         "error": job["error"],
+        # When it ended, so a page that rejoins a finished run can say when it
+        # was checked instead of guessing.
+        "finished_at": job["finished_at"],
         **jobs._progress(job),
         "books": books,
         # A cursor into the production order, not a book index — see store.job_results.

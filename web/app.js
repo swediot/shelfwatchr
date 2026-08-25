@@ -149,7 +149,11 @@ const jsonPost = (body) => ({
  *  phone set to US English would otherwise read the day and month the other way
  *  round, and 08/12 is a different date depending on who's holding it. */
 function shortDate(value) {
-  const d = new Date(value);
+  // `new Date(null)` is not invalid — it's the epoch, which is how a missing
+  // timestamp used to render as "Checked 01/01/1970".
+  if (value === null || value === undefined || value === "") return "";
+  // The server sends job timestamps as epoch seconds; Date wants milliseconds.
+  const d = new Date(typeof value === "number" && value < 1e12 ? value * 1000 : value);
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
@@ -222,9 +226,17 @@ function plural(n, one, many) {
 function queueLabel(av) {
   const holds = av.holds || 0;
   const copies = av.owned_copies || 0;
-  return copies
-    ? `${plural(holds, "person is", "people are")} waiting for ${plural(copies, "copy", "copies")}`
-    : `${plural(holds, "person is", "people are")} waiting`;
+  if (!copies) return `${plural(holds, "person is", "people are")} waiting`;
+  // With a queue, "on loan" goes without saying — 109 people waiting for 5
+  // copies explains itself. It's only worth spelling out when nobody is
+  // waiting, where "0 people are waiting for 1 copy" otherwise reads as a
+  // contradiction: if the queue is empty, why can't I borrow it?
+  if (!holds) {
+    const onLoan = copies === 1 ? "the only copy is on loan" : `all ${copies} copies are on loan`;
+    return `Nobody is waiting, but ${onLoan}`;
+  }
+  return `${plural(holds, "person is", "people are")} waiting for `
+    + `${plural(copies, "copy", "copies")}`;
 }
 
 /** The queue detail: hidden by default, revealed on hover or by the toggle.
@@ -371,13 +383,13 @@ function bestWait(book) {
   return best;
 }
 
-function groupOf(book, shortWaitDays = 21) {
+function groupOf(book) {
   const rank = rankOf(book);
   if (rank === 0) return "available";
-  if (rank === 1) {
-    const w = bestWait(book);
-    return typeof w === "number" && w <= shortWaitDays ? "short" : "long";
-  }
+  // Short and long waits used to be separate sections. The split put the same
+  // decision — join the queue or don't — either side of an arbitrary line, and
+  // the per-book wait is already on every card. One section, sorted.
+  if (rank === 1) return "wait";
   return "none";   // counted, never listed
 }
 
@@ -717,8 +729,7 @@ async function cancelJob() {
 
 const GROUPS = [
   ["available", "Available now", "Borrow these today."],
-  ["short", "Short wait", ""],
-  ["long", "Longer wait", ""],
+  ["wait", "Waitlist", ""],
 ];
 
 /** The one result that matters: best status, then shortest wait / most copies. */
@@ -746,12 +757,20 @@ function libRow(av) {
          av.fmt === "ebook-overdrive" ? "Ebook" : "Audio")
     : null;
   const attrs = linkAttrs(av);
-  const inner = attrs
-    ? el("a", attrs, name, tag, pill)
-    : el("span", { class: "static" }, name, tag, pill);
-  const parts = [inner];
+  // The queue glyphs go *before* the pill, inside the same flex line. They used
+  // to follow it as a sibling, which pushed the pill left by however wide the
+  // numbers happened to be — so a row with a queue and a row without one ended
+  // their pills at different places. Pill last means every pill ends flush right.
   const queue = queueDetail(av);
-  if (queue) parts.push(...queue);
+  const inlineQueue = queue ? queue[0] : null;
+  const pop = queue ? queue[1] : null;
+  const inner = attrs
+    ? el("a", attrs, name, tag, inlineQueue, pill)
+    : el("span", { class: "static" }, name, tag, inlineQueue, pill);
+  // ...and the row reserves the same trailing slot the card head gives its
+  // chevron, so a library row's pill ends level with the headline pill above it.
+  const parts = [inner, el("span", { class: "lib-gap", "aria-hidden": "true" })];
+  if (pop) parts.push(pop);
   if (av.note && av.note.startsWith("lookup failed")) {
     parts.push(el("span", { class: "flag", text: "last known" }));
   }
@@ -762,6 +781,13 @@ const CHEVRON =
   '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
   '<path d="M4.2 6.1 8 9.9l3.8-3.8" fill="none" stroke="currentColor" ' +
   'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** The chevron as an element, so the section heading and the cards share one. */
+function chevron(cls) {
+  const span = el("span", { class: cls });
+  span.innerHTML = CHEVRON;
+  return span;
+}
 
 let cardSeq = 0;
 
@@ -793,13 +819,6 @@ function bookCard(book) {
     const id = `libs-${++cardSeq}`;
     const ordered = [best, ...others].sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9));
     const rows = el("div", { class: "libs", id, hidden: true }, ordered.map(libRow));
-    // Only worth explaining if there's a queue on show.
-    if (ordered.some((av) => av.status === "holdable" && (av.holds || av.owned_copies))) {
-      rows.append(legend());
-    }
-    // The other way in, for whichever one your phone actually honours.
-    const alt = altLink(best);
-    if (alt) rows.append(alt);
     const toggle = el("button", {
       class: "expand", type: "button", "aria-expanded": "false", "aria-controls": id,
       "aria-label": `Show all ${rows.length} libraries for ${book.title}`,
@@ -814,6 +833,7 @@ function bookCard(book) {
     head.append(toggle);
     card.append(head, rows);
   } else {
+    head.append(el("span", { class: "expand-gap", "aria-hidden": "true" }));
     card.append(head);
   }
   return card;
@@ -831,29 +851,7 @@ let renderTimer = null;
 let lastRender = 0;
 
 /** Explains the two glyphs, inside the card that's showing them. */
-function legend() {
-  const make = (svg, text) => {
-    const item = el("span", { class: "legend-item" });
-    item.innerHTML = svg;
-    item.append(text);
-    return item;
-  };
-  return el("p", { class: "legend" },
-    make(ICON_QUEUE, "waiting"),
-    make(ICON_COPIES, "copies"));
-}
 
-/** The link the pill *isn't* using — the fallback if one doesn't reach the app. */
-function altLink(av) {
-  const share = shareUrl(av);
-  const library = safeUrl(av.url);
-  if (!share || !library) return null;
-  const offerShare = linkStyle() !== "share";
-  const href = offerShare ? share : library;
-  const label = offerShare ? "Open in the Libby app" : "Open on libbyapp.com";
-  const attrs = TOUCH ? { href } : { href, target: "_blank", rel: "noopener" };
-  return el("p", { class: "alt-link" }, el("a", attrs, label));
-}
 
 /** Throttled: streaming 1,200 results shouldn't mean 1,200 full re-renders. */
 function renderResults(immediate = false) {
@@ -892,8 +890,6 @@ function renderAccountBar() {
 
   if (!auth.user) {
     setChildren(bar,
-      el("span", { text: "Your list is saved on this device only." }),
-      el("span", { class: "spacer" }),
       el("a", { href: "/signin", text: "Sign in" }),
       auth.signups ? el("a", { href: "/signin?mode=signup", text: "Create account" }) : null);
     return;
@@ -903,7 +899,6 @@ function renderAccountBar() {
   out.addEventListener("click", signOut);
   bar.replaceChildren(
     el("span", { class: "who" }, el("span", { class: "dot" }), el("span", { text: auth.user.email })),
-    el("span", { class: "spacer" }),
     out);
 }
 
@@ -976,7 +971,19 @@ function showAuthOutcome() {
 
 const VIEW_KEY = "shelfwatchr.view.v1";
 const view = { q: "", sort: "default", library: "", length: "", status: "", wait: "",
-               format: "both", seed: 1 };
+               format: "both", seed: 1, collapsed: {} };
+
+/* Which sections are folded shut. Kept in `view` so it rides along with the
+   rest of the saved display state and survives a reload. */
+function isCollapsed(key) {
+  return !!(view.collapsed && view.collapsed[key]);
+}
+
+function setCollapsed(key, shut) {
+  view.collapsed = Object.assign({}, view.collapsed, { [key]: shut });
+  saveView();
+  renderResults(true);
+}
 
 function loadView() {
   try { Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || "{}")); }
@@ -1250,12 +1257,12 @@ function bindControls() {
 /** Books grouped and ordered for display. One definition, two consumers:
  *  the page and the downloadable report, which must not drift apart. */
 function bucketed({ filtered = true } = {}) {
-  const buckets = { available: [], short: [], long: [], none: [] };
+  const buckets = { available: [], wait: [], none: [] };
   const books = filtered ? state.results.filter(matchesFilters) : state.results;
   for (const book of books) buckets[groupOf(book)].push(book);
   // Sections stay: status is still the first question. The chosen order applies
   // inside each one.
-  for (const key of ["available", "short", "long"]) buckets[key] = sortBooks(buckets[key]);
+  for (const key of ["available", "wait"]) buckets[key] = sortBooks(buckets[key]);
   return buckets;
 }
 
@@ -1271,20 +1278,33 @@ function paint() {
     if (!list.length) continue;
     const limit = state.expanded[key] ? list.length : PAGE_SIZE;
     const shown = list.slice(0, limit);
-    const section = el("section", { class: "group" },
-      el("h2", {}, title, el("span", { class: "count", text: String(list.length) })),
+    const shut = isCollapsed(key);
+    const bodyId = `group-${key}`;
+
+    const body = el("div", { class: "group-body", id: bodyId, hidden: shut },
       blurb ? el("p", { class: "hint", text: blurb }) : null,
       shown.map(bookCard));
     if (list.length > limit) {
       const more = el("button", { type: "button", class: "show-all" },
         `Show all ${list.length}`);
       more.addEventListener("click", () => { state.expanded[key] = true; renderResults(true); });
-      section.append(more);
+      body.append(more);
     }
-    out.push(section);
+
+    // The heading is the control: a whole section of "on the waitlist" is worth
+    // folding away when what you came for is what's on the shelf today.
+    const head = el("button", {
+      type: "button", class: "group-head",
+      "aria-expanded": String(!shut), "aria-controls": bodyId,
+    }, chevron("chev"), title,
+       el("span", { class: "count", text: String(list.length) }));
+    head.addEventListener("click", () => setCollapsed(key, !isCollapsed(key)));
+
+    out.push(el("section", { class: `group${shut ? " shut" : ""}` },
+      el("h2", {}, head), body));
   }
 
-  const shown = buckets.available.length + buckets.short.length + buckets.long.length;
+  const shown = buckets.available.length + buckets.wait.length;
   if (!out.length && !state.running && state.results.length) {
     out.push(el("p", {
       class: "empty-note",
@@ -1553,14 +1573,15 @@ async function rejoinJob(jobId) {
     if (!state.results.length && job.state !== "running") return false;
 
     state.jobId = jobId;
+    // Without this a reload rejoins the run with no timestamp at all, and the
+    // header dates the report to the epoch.
+    state.generatedAt = job.finished_at || job.started_at || null;
     $("save-panel").hidden = state.results.length === 0;
     renderResults(true);
 
     if (job.state === "running") {
       message(`Picking up a run that's still going — ${job.done} of ${job.total} done.`, "info");
       followJob(jobId, next, job.total);
-    } else {
-      message("Showing your last run. Re-check when you want fresh numbers.", "info");
     }
     return true;
   } catch (_) {

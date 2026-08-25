@@ -53,6 +53,36 @@ def capture_mail():
     accounts_mod.notify.send_account_mail = fake
 
 
+try:                                    # pytest is optional: this file is also
+    import pytest                       # meant to run as a plain script.
+except ImportError:                     # pragma: no cover
+    pytest = None
+
+if pytest is not None:
+    @pytest.fixture(scope="module", autouse=True)
+    def _harness():
+        """Set the suite up under pytest too.
+
+        The `__main__` block at the bottom calls init_db() and capture_mail()
+        before running anything; pytest never reaches it, so without this every
+        test that reads a mailed link fails on a database that doesn't exist
+        and a mailer that was never intercepted.
+
+        The wipe is for the whole-suite run. `settings` reads the environment
+        once, at import, so whichever test module imports app.config first fixes
+        the database path for every other one — these suites end up sharing a
+        file, and this one then starts on top of another's saved lists and trips
+        over its own one-list-per-account rule. Run as a script it's a no-op:
+        the database is a fresh temp file.
+        """
+        store.init_db()
+        with store.db() as conn:
+            for table in ("session", "auth_token", "profile_report", "profile_state",
+                          "profile", "user"):
+                conn.execute(f"DELETE FROM {table}")
+        capture_mail()
+
+
 def check(condition, message):
     if not condition:
         raise AssertionError(message)

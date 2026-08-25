@@ -14,7 +14,7 @@ import zlib
 from ..matching import Book, estimate_wait_days, score_candidate
 from ..models import Availability, Scope
 from .base import ProviderError
-from .libby import FORMAT_LABEL
+from .libby import FORMAT_LABEL, title_url
 
 LIBRARIES = [
     Scope(key="westmount", name="Westmount Public Library", region="Québec, Canada"),
@@ -118,7 +118,7 @@ class MockProvider:
                 owned_copies=info["owned"], holds=info["holds"],
                 title_id=str(abs(zlib.crc32(book.key.encode())) % 9999999),
                 duration_seconds=3600 * 2 + (zlib.crc32(book.key.encode()) % 54000),
-                url=f"https://libbyapp.com/library/{scope.key}/everything/page-1/000",
+                url=title_url(scope.key, "000", fmt),
             )
             if info["owned"] == 0:
                 av.status = "not_owned"
@@ -151,7 +151,7 @@ class MockProvider:
         av.title_id = str(best["id"])
         av.duration_seconds = best.get("duration") or (
             3600 * 3 + (zlib.crc32(book.key.encode()) % 46000))
-        av.url = f"https://libbyapp.com/library/{scope.key}/everything/page-1/{best['id']}"
+        av.url = title_url(scope.key, best["id"], fmt)
         av.available_copies = best["available"]
         av.owned_copies = best["owned"]
         av.holds = best["holds"]
@@ -221,7 +221,7 @@ class MockProvider:
             holds=raw.get("holdsCount", 0),
             title_id=str(title_id),
             duration_seconds=3600 * 2 + (zlib.crc32(str(title_id).encode()) % 54000),
-            url=f"https://libbyapp.com/library/{scope.key}/everything/page-1/{title_id}",
+            url=title_url(scope.key, title_id, fmt),
         )
         if av.owned_copies == 0 and not raw.get("isAvailable"):
             av.status = "not_owned"

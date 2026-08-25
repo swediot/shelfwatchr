@@ -83,6 +83,14 @@ async def _run(job_id, books, scopes, formats, threshold, refresh) -> None:
                 log.warning("job %s: chunk at %d failed: %s", job_id, start, exc)
                 results = [BookResult(title=b.title, author=b.author, key="", results=[])
                            for b in chunk]
+            # zip() would truncate silently, writing later results at indices
+            # belonging to earlier books. If the counts ever disagree, the
+            # results are unusable — say so rather than storing them shifted.
+            if len(results) != len(chunk):
+                log.error("job %s: chunk at %d returned %d results for %d books; dropping",
+                          job_id, start, len(results), len(chunk))
+                results = [BookResult(title=b.title, author=b.author, key="", results=[])
+                           for b in chunk]
             store.job_add_results(job_id, list(zip(batch, results)))
             store.job_add_stats(job_id, stats)
             _wake(job_id)

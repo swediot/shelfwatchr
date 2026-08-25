@@ -3,12 +3,18 @@
 #
 #   fly launch --no-deploy --copy-config --name shelfwatchr
 #   fly volumes create shelfwatchr_data --size 1 --region fra
+#   fly secrets set SHELFWATCHR_BETA_PASSWORD="the-word-testers-are-given"
 #   fly secrets set SHELFWATCHR_SMTP_HOST=... SHELFWATCHR_SMTP_USER=... SHELFWATCHR_SMTP_PASS=...
 #   fly deploy
 #   fly certs add shelfwatchr.etinginfrati.com     # then add the DNS records it prints
 #
-# Once you've created your own account, close the door behind you:
-#   fly secrets set SHELFWATCHR_SIGNUPS=0
+# The beta password is the one thing testers need besides the link. Keep a copy
+# when you set it: `fly secrets list` only confirms that it exists. Setting a
+# new one signs everybody out, which is how you end someone's access.
+#
+# When the beta is over, open the door and let people keep their own lists:
+#   fly secrets unset SHELFWATCHR_BETA_PASSWORD
+#   # then drop SHELFWATCHR_ACCOUNTS from [env] below and redeploy
 
 app = "shelfwatchr"
 primary_region = "fra"          # Frankfurt: nearest to Zurich
@@ -29,6 +35,11 @@ primary_region = "fra"          # Frankfurt: nearest to Zurich
   SHELFWATCHR_CONCURRENCY = "3"
   SHELFWATCHR_REFRESH = "1"
   SHELFWATCHR_REFRESH_HOUR = "4"
+  # Closed beta: no accounts to make, no sign-in link anywhere in the interface.
+  # Lists are reached by their slug, the way they were before accounts existed.
+  # The one shared password lives in SHELFWATCHR_BETA_PASSWORD, set as a secret
+  # rather than written here — this file is in git.
+  SHELFWATCHR_ACCOUNTS = "0"
 
 [[mounts]]
   source = "shelfwatchr_data"

@@ -407,13 +407,36 @@ def remember_libraries(scopes: Iterable[Scope]) -> None:
 
 
 def search_known_libraries(query: str, limit: int = 10) -> list[Scope]:
-    """Libraries we've already seen. Instant, and it works offline."""
-    q = f"%{query.strip().lower()}%"
+    """Libraries we've already seen. Instant, and it works offline.
+
+    Ranked, not alphabetical: once the directory is seeded the table holds
+    thousands of rows, and "brooklyn" has to put Brooklyn Public Library above
+    every other name that merely contains the word.
+    """
+    term = query.strip().lower()
+    if not term:
+        return []
+    exact, prefix, contains = term, f"{term}%", f"%{term}%"
+    # "USA" matches a region, but it is also a substring of "azusasekkei"; a
+    # country name means the country, so that tier outranks loose text hits.
+    # The tail form catches the state-qualified spellings — "IN, USA".
+    region_tail = f"%, {term}"
     with db() as conn:
         rows = conn.execute(
-            "SELECT provider, key, name, region FROM library_dir "
-            "WHERE lower(name) LIKE ? OR lower(key) LIKE ? ORDER BY name LIMIT ?",
-            (q, q, limit),
+            "SELECT provider, key, name, region FROM library_dir WHERE "
+            # Region too: "Canada" and "Switzerland" appear in no library's name,
+            # so without this the only way to find one is to already know it.
+            "  lower(name) LIKE ? OR lower(key) LIKE ? OR lower(region) LIKE ? "
+            "ORDER BY CASE "
+            "  WHEN lower(key) = ? THEN 0 "          # the slug, pasted from a Libby URL
+            "  WHEN lower(name) = ? THEN 1 "
+            "  WHEN lower(region) = ? OR lower(region) LIKE ? THEN 2 "
+            "  WHEN lower(name) LIKE ? THEN 3 "      # name starts with it
+            "  WHEN lower(key) LIKE ? THEN 4 "
+            "  WHEN lower(name) LIKE ? THEN 5 "      # name contains it
+            "  ELSE 6 END, length(name), name LIMIT ?",
+            (contains, contains, contains,
+             exact, exact, exact, region_tail, prefix, prefix, contains, limit),
         ).fetchall()
     return [Scope(**dict(r)) for r in rows]
 

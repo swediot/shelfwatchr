@@ -1,0 +1,18 @@
+# Local virtualenv
+.venv/
+venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# The SQLite database and its WAL sidecars. This is runtime state, not source:
+# it holds whoever's reading list, saved profiles, and any accounts on the
+# instance. The Dockerfile mounts /data as a volume for exactly this reason.
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# pytest
+.pytest_cache/

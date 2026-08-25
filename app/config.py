@@ -95,6 +95,12 @@ class Settings:
     # Used in notification links, so the alert on your phone opens the report.
     public_url: str = _env("SHELFWATCH_PUBLIC_URL", "").rstrip("/")
 
+    # One shared password in front of the whole site, for a closed beta. Empty
+    # means no gate at all. It is not an account: everyone who gets in is the
+    # same anonymous visitor, which is the point — it keeps a public URL from
+    # being a public site while it's still being tested.
+    beta_password: str = _env("SHELFWATCH_BETA_PASSWORD", "") or ""
+
     # Accounts. Optional throughout: with this off the app behaves exactly as it
     # did before there were accounts, and saved lists are reached by their slug.
     accounts_enabled: bool = _bool("SHELFWATCH_ACCOUNTS", True)

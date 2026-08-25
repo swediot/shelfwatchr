@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shelfwatchr</title>
 <link rel="stylesheet" href="/static/styles.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
 </head>
 <body>
 <div class="wrap">
@@ -15,14 +15,15 @@
       <div>
         <h1>Shelfwatchr</h1>
       </div>
-      <button type="button" id="theme-toggle" class="theme-toggle"
-              aria-label="Switch theme" title="Switch theme"></button>
+      <div class="header-actions">
+        <!-- Filled in by app.js once /api/auth/me answers. Hidden until then, so a
+             server with accounts turned off never flashes a sign-in link. -->
+        <div class="account-bar" id="account-bar" hidden></div>
+        <button type="button" id="theme-toggle" class="theme-toggle"
+                aria-label="Switch theme" title="Switch theme"></button>
+      </div>
     </div>
   </header>
-
-  <!-- Filled in by app.js once /api/auth/me answers. Hidden until then, so a
-       server with accounts turned off never flashes a sign-in link. -->
-  <div class="account-bar" id="account-bar" hidden></div>
   <!-- Sign-in outcomes go here, not in #messages: that sits below the upload
        panels, and "you are signed in" arriving off the bottom of a phone
        screen is the same as not arriving. -->
@@ -45,7 +46,7 @@
 
     <li class="panel">
       <h2><span class="step-no">2</span> Your reading list</h2>
-      <p class="hint">A StoryGraph or Goodreads CSV export — the whole file is fine.</p>
+      <p class="hint">A StoryGraph or Goodreads CSV export.</p>
 
       <div class="dropzone" id="dropzone" tabindex="0" role="button">
         <strong>Drop your CSV here</strong><br>
