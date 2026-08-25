@@ -69,6 +69,18 @@ def test_csv_parsing():
     fifth = next(b for t, b in by_title.items() if "Fifth Season" in t)
     check(fifth.isbn == "9780316229296", f'Goodreads ="..." ISBN guard stripped (got {fifth.isbn!r})')
 
+    # Owned books: counted but kept by default, dropped on request. StoryGraph
+    # says Yes/No, Goodreads gives a copy count; both fixtures mark one book.
+    for name in ("storygraph.csv", "goodreads.csv"):
+        raw = (FIXTURES / name).read_bytes()
+        kept, report = parse_reading_list(raw)
+        check(report["has_owned"], f"{name}: owned column found")
+        dropped, report2 = parse_reading_list(raw, exclude_owned=True)
+        check(report2["skipped_owned"] == report["owned"] == 1,
+              f"{name}: exclude_owned drops exactly the owned rows ({report2['skipped_owned']})")
+        check(len(kept) - len(dropped) == report2["skipped_owned"],
+              f"{name}: book count shrinks by the owned count")
+
     # A file that isn't a reading list at all
     try:
         parse_reading_list(b"foo,bar\n1,2\n")

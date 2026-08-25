@@ -450,9 +450,11 @@ async function uploadCsv(file, statuses = "to-read") {
   state.file = file;
   const body = new FormData();
   body.append("file", file);
+  const excludeOwned = $("owned-exclude").checked;
   $("csv-report").replaceChildren(el("p", { class: "empty-note", text: `Reading ${file.name}…` }));
   try {
-    const data = await api(`/api/import?statuses=${encodeURIComponent(statuses)}`,
+    const data = await api(
+      `/api/import?statuses=${encodeURIComponent(statuses)}&exclude_owned=${excludeOwned}`,
       { method: "POST", body });
     if (state.slug && state.books.length) {
       state.pendingUpload = data.books;      // a saved list is open: offer to update it
@@ -477,6 +479,13 @@ function renderCsvReport(report, chosen) {
     return el("option", { value: s, selected: s === chosen }, n ? `${label} (${n})` : label);
   }));
   $("shelf-row").hidden = false;
+
+  // The switch only earns its place when the export says what you own and
+  // at least one book on this shelf is. Otherwise it's a control that does
+  // nothing, which is worse than no control.
+  const owned = report.owned || 0;
+  $("owned-line").hidden = !(report.has_owned && owned);
+  $("owned-label").textContent = `Skip books I own (${owned})`;
 
   // Nothing under the row. The shelf menu carries the count, and the button
   // says what it does — everything else that used to live here (which export,
@@ -1617,6 +1626,7 @@ async function init() {
   });
   $("csv-input").addEventListener("change", (e) => uploadCsv(e.target.files[0]));
   $("shelf-select").addEventListener("change", (e) => uploadCsv(state.file, e.target.value));
+  $("owned-exclude").addEventListener("change", () => uploadCsv(state.file, $("shelf-select").value));
   $("btn-check").addEventListener("click", () => {
     // With a saved list open and a new export waiting, checking means saving
     // it first — otherwise the report and the saved list quietly disagree.

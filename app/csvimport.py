@@ -70,6 +70,15 @@ def parse_int(value: str):
         return None
 
 
+def parse_owned(value: str) -> bool:
+    """StoryGraph writes Yes/No; Goodreads writes a copy count."""
+    v = (value or "").strip().lower()
+    if v in ("yes", "y", "true", "owned"):
+        return True
+    n = parse_int(v)
+    return bool(n and n > 0)
+
+
 def detect_source(fields) -> str:
     lowered = {(f or "").strip().lower() for f in fields or []}
     if "exclusive shelf" in lowered or "book id" in lowered:
@@ -91,8 +100,14 @@ def normalise_status(value: str) -> str:
     }.get(s, s.replace(" ", "-"))
 
 
-def parse_reading_list(data: bytes, statuses=DEFAULT_STATUSES) -> tuple[list[BookIn], dict]:
-    """Return (books, report). The report explains what was dropped and why."""
+def parse_reading_list(
+    data: bytes, statuses=DEFAULT_STATUSES, exclude_owned: bool = False,
+) -> tuple[list[BookIn], dict]:
+    """Return (books, report). The report explains what was dropped and why.
+
+    exclude_owned drops rows the export marks as owned: a book on your shelf
+    is not one you need the library for.
+    """
     text = data.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     fields = reader.fieldnames or []
@@ -105,11 +120,15 @@ def parse_reading_list(data: bytes, statuses=DEFAULT_STATUSES) -> tuple[list[Boo
     c_isbn = find_col(fields, "isbn13", "isbn/uid", "isbn")
     c_added = find_col(fields, "date added", "added")
     c_pages = find_col(fields, "number of pages", "pages")
+    c_owned = find_col(fields, "owned?", "owned copies", "owned")
 
     report = {
         "source": source,
         "has_dates": bool(c_added),
         "has_pages": bool(c_pages),
+        "has_owned": bool(c_owned),
+        "exclude_owned": exclude_owned,
+        "owned": 0,
         "columns_seen": fields,
         "status_column": c_status,
         "statuses_wanted": list(statuses),
@@ -117,6 +136,7 @@ def parse_reading_list(data: bytes, statuses=DEFAULT_STATUSES) -> tuple[list[Boo
         "rows": 0,
         "imported": 0,
         "skipped_status": 0,
+        "skipped_owned": 0,
         "skipped_duplicate": 0,
         "skipped_untitled": 0,
     }
@@ -143,6 +163,14 @@ def parse_reading_list(data: bytes, statuses=DEFAULT_STATUSES) -> tuple[list[Boo
                 report["statuses_found"][status] = report["statuses_found"].get(status, 0) + 1
             if wanted and status and status not in wanted:
                 report["skipped_status"] += 1
+                continue
+
+        # Counted after the shelf filter, so the number offered in the UI is
+        # "owned books on this shelf", which is what the switch would remove.
+        if c_owned and parse_owned(row.get(c_owned, "")):
+            report["owned"] += 1
+            if exclude_owned:
+                report["skipped_owned"] += 1
                 continue
 
         authors = split_authors(clean(row.get(c_auth, "")) if c_auth else "")

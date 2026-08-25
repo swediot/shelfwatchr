@@ -307,12 +307,15 @@ async def job_cancel(job_id: str):
 async def import_storygraph(
     file: UploadFile = File(...),
     statuses: str = Query("to-read", description="comma-separated read statuses to keep"),
+    exclude_owned: bool = Query(False, description="drop books the export marks as owned"),
 ):
     raw = await file.read()
     if len(raw) > 8 * 1024 * 1024:
         raise HTTPException(413, "That CSV is over 8 MB — is it definitely a StoryGraph export?")
     try:
-        books, report = parse_reading_list(raw, [s for s in statuses.split(",") if s.strip()])
+        books, report = parse_reading_list(
+            raw, [s for s in statuses.split(",") if s.strip()], exclude_owned=exclude_owned,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:  # noqa: BLE001
