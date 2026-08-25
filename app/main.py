@@ -12,6 +12,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -71,15 +72,19 @@ async def block_cross_origin_writes(request: Request, call_next):
     so a cross-site POST never carries it in the first place — such a request
     arrives as an anonymous one and can only touch anonymous lists, where the
     slug was always the only credential.
+
+    Only the host is compared: behind a TLS-terminating proxy the app sees
+    itself as http:// while the browser's Origin says https://, and that is
+    the same site.
     """
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         origin = request.headers.get("origin")
         if origin:
-            allowed = {str(request.base_url).rstrip("/")}
-            extra = settings.public_url
+            allowed = {request.url.netloc.lower()}
+            extra = urlparse(settings.public_url).netloc.lower()
             if extra:
-                allowed.add(extra.rstrip("/"))
-            if origin.rstrip("/") not in allowed:
+                allowed.add(extra)
+            if urlparse(origin).netloc.lower() not in allowed:
                 return JSONResponse(
                     {"detail": "Cross-origin writes are not accepted."}, status_code=403
                 )

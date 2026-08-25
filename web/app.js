@@ -728,7 +728,7 @@ async function cancelJob() {
 /* ------------------------------------------------------------ results */
 
 const GROUPS = [
-  ["available", "Available now", "Borrow these today."],
+  ["available", "Available now", ""],
   ["wait", "Waitlist", ""],
 ];
 
