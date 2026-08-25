@@ -1,0 +1,61 @@
+# Fly.io deployment. One small machine and one volume is enough — this app is
+# a few hundred requests a night against an API that is itself the bottleneck.
+#
+#   fly launch --no-deploy --copy-config --name shelfwatchr
+#   fly volumes create shelfwatchr_data --size 1 --region fra
+#   fly secrets set SHELFWATCHR_SMTP_HOST=... SHELFWATCHR_SMTP_USER=... SHELFWATCHR_SMTP_PASS=...
+#   fly deploy
+#   fly certs add shelfwatchr.etinginfrati.com     # then add the DNS records it prints
+#
+# Once you've created your own account, close the door behind you:
+#   fly secrets set SHELFWATCHR_SIGNUPS=0
+
+app = "shelfwatchr"
+primary_region = "fra"          # Frankfurt: nearest to Zurich
+
+[build]
+
+[env]
+  SHELFWATCHR_PUBLIC_URL = "https://shelfwatchr.etinginfrati.com"
+  # Fly terminates TLS in front of the app, which still speaks plain HTTP, so
+  # the Secure flag has to be set explicitly or the session cookie is never
+  # sent back and nobody can stay signed in.
+  SHELFWATCHR_SECURE_COOKIES = "1"
+  # Fly's proxy sets X-Forwarded-For. Trusting it is what makes the login rate
+  # limiter see real client addresses instead of one proxy IP for everyone.
+  SHELFWATCHR_TRUST_PROXY = "1"
+  # Politeness towards OverDrive. A public instance is traffic under your name.
+  SHELFWATCHR_RPM = "90"
+  SHELFWATCHR_CONCURRENCY = "3"
+  SHELFWATCHR_REFRESH = "1"
+  SHELFWATCHR_REFRESH_HOUR = "4"
+
+[[mounts]]
+  source = "shelfwatchr_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Never scale to zero: the nightly refresh is a background task inside this
+  # process, and a machine that has stopped does not run it.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 80
+
+[checks.health]
+  type = "http"
+  port = 8080
+  path = "/api/health"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"     # scrypt wants 64MB per login; 256 is too tight

@@ -1,0 +1,467 @@
+:root {
+  --bg: #fbfaf8; --card: #fff; --ink: #1b1a18; --muted: #6b6660; --line: #e6e2dc;
+  --ok-bg: #e2f2e6; --ok-ink: #1d6b35;
+  --hold-bg: #fdf0dc; --hold-ink: #8a5a12;
+  --none-bg: #f0eeea; --none-ink: #635c54;
+  --err-bg: #fbe6e4; --err-ink: #963028;
+  --accent: #3a6ea5; --accent-ink: #fff;
+  --focus: #3a6ea5;
+  /* The hover tooltip. Its own tokens rather than inverting --ink/--bg: the
+     inversion reads as "raised" on a light page and as a glaring white box on
+     a dark one, where a lifted grey is what "above the surface" looks like. */
+  --tip-bg: #26251f; --tip-ink: #fbfaf8;
+  --radius: 12px;
+}
+/* Dark palette, applied by explicit choice or by the system when no choice
+   has been made. Both selectors set the same tokens. */
+:root[data-theme="dark"] {
+  --bg: #17181a; --card: #202225; --ink: #ece9e4; --muted: #9a948c; --line: #32353a;
+  --ok-bg: #1c3a26; --ok-ink: #8bd6a3;
+  --hold-bg: #3d2f16; --hold-ink: #e5bc6f;
+  --none-bg: #2a2c30; --none-ink: #a7a29b;
+  --err-bg: #3d1f1d; --err-ink: #f0a49c;
+  --accent: #4d81b8; --accent-ink: #fff;
+  --focus: #8ab4e8;
+  --tip-bg: #3c4046; --tip-ink: #ece9e4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17181a; --card: #202225; --ink: #ece9e4; --muted: #9a948c; --line: #32353a;
+    --ok-bg: #1c3a26; --ok-ink: #8bd6a3;
+    --hold-bg: #3d2f16; --hold-ink: #e5bc6f;
+    --none-bg: #2a2c30; --none-ink: #a7a29b;
+    --err-bg: #3d1f1d; --err-ink: #f0a49c;
+    --accent: #4d81b8; --accent-ink: #fff;
+    --focus: #8ab4e8;
+    --tip-bg: #3c4046; --tip-ink: #ece9e4;
+  }
+}
+* { box-sizing: border-box; }
+/* Several layout rules below set display, which would otherwise beat the
+   user-agent's [hidden] rule and leave "hidden" panels on screen. */
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; padding: 0 16px 80px; background: var(--bg); color: var(--ink);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 860px; margin: 0 auto; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+header { padding: 28px 0 8px; }
+header h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+.panel {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; margin: 16px 0;
+}
+.panel h2 { margin: 0 0 4px; font-size: 0.95rem; }
+.panel .hint { margin: 0 0 12px; color: var(--muted); font-size: 0.84rem; }
+
+label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 4px; }
+input[type="text"], input[type="search"] {
+  width: 100%; padding: 10px 12px; font-size: 1rem; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+}
+button {
+  font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+  padding: 11px 16px; min-height: 44px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink);
+}
+/* Inline text buttons opt out of the 44px floor — they sit in a sentence. */
+button.link, footer .setting button { min-height: 0; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.link {
+  background: none; border: none; color: var(--accent); padding: 4px 6px; font-weight: 500;
+}
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.row > .grow { flex: 1 1 200px; min-width: 0; }
+/* Full width, so anything appended to the row lands on the next line. */
+.shelf-line {
+  display: flex; gap: 8px; align-items: flex-end;
+  flex-wrap: nowrap;          /* the menu gives way instead of the button wrapping */
+  flex: 1 1 100%; min-width: 0;
+}
+.shelf-line > .grow { flex: 1 1 auto; min-width: 0; }
+#shelf-select { width: 100%; }
+/* The button keeps its size and the menu gives way, so the two stay on one
+   line down to a narrow phone — a select truncates its label gracefully, a
+   button that wrapped under it would leave a stranded half-row. The much wider
+   update-saved-list button still wraps to its own line, which is right: it's
+   the rarer choice. */
+#shelf-row #btn-check { flex: 0 0 auto; }
+/* Matched heights. The select and the button set their own by different rules —
+   padding on one, a 44px touch-target floor on the other — so left alone they
+   sit 2px apart, which is just visible enough to look like a mistake. */
+.shelf-line #shelf-select,
+.shelf-line #btn-check { height: 46px; min-height: 46px; padding-top: 0; padding-bottom: 0; }
+
+/* library picker */
+.picker { position: relative; }
+.suggestions {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12); max-height: 280px; overflow-y: auto;
+}
+.suggestions:empty { display: none; }
+.suggestions button {
+  display: block; width: 100%; text-align: left; border: none; border-radius: 0;
+  background: none; padding: 10px 12px; font-weight: 500;
+}
+.suggestions button:hover, .suggestions button:focus { background: var(--none-bg); }
+.suggestions .sub { display: block; color: var(--muted); font-size: 0.78rem; font-weight: 400; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 8px; background: var(--none-bg);
+  border-radius: 99px; padding: 6px 8px 6px 14px; font-size: 0.85rem;
+}
+.chip button {
+  /* Was ~18x21px. Same reasoning as the chevron: the glyph is small, the
+     thing you have to hit with a thumb shouldn't be. */
+  border: none; background: none; padding: 0; margin: -8px -4px -8px 0;
+  width: 34px; height: 34px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: 1.1rem; line-height: 1; color: var(--muted);
+}
+.chip { padding: 6px 4px 6px 14px; }
+.empty-note { color: var(--muted); font-size: 0.85rem; margin: 12px 0 0; }
+
+.dropzone {
+  border: 2px dashed var(--line); border-radius: var(--radius); padding: 24px 16px;
+  text-align: center; color: var(--muted); font-size: 0.9rem; cursor: pointer;
+}
+.dropzone.over { border-color: var(--accent); color: var(--ink); }
+
+/* progress */
+.progress {
+  margin: 16px 0 0; padding: 14px 16px; border-radius: var(--radius);
+  background: var(--card); border: 1px solid var(--line);
+}
+/* Once there's a report to scroll through, the panel pins to the viewport, so
+   the answer to "is it still going?" is never a scroll away. Fixed rather than
+   sticky on purpose: a sticky element only sticks while its parent is on
+   screen, which is exactly when you stop needing it. */
+.progress.floating {
+  position: fixed; z-index: 40;
+  left: 50%; transform: translateX(-50%);
+  bottom: 12px; width: min(828px, calc(100% - 24px));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+@supports (padding: env(safe-area-inset-bottom)) {
+  .progress.floating { bottom: calc(12px + env(safe-area-inset-bottom)); }
+}
+/* Room for the pinned panel, so it never covers the last result. */
+body.run-active { padding-bottom: 210px; }
+.progress-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-bottom: 10px;
+}
+.progress-head strong { font-size: 0.95rem; }
+.progress-phase { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.progress-right { display: flex; align-items: baseline; gap: 10px; flex: 0 0 auto; }
+#progress-pct { font-size: 1.1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar {
+  height: 8px; background: var(--none-bg); border-radius: 99px;
+  overflow: hidden; position: relative;
+}
+.bar > div {
+  height: 100%; width: 0; background: var(--accent);
+  border-radius: 99px; transition: width 0.4s ease;
+}
+/* A run can legitimately go quiet for a minute while it waits its turn at the
+   rate limiter. The stripe keeps it visibly alive rather than looking hung. */
+.bar > div::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: sweep 1.6s linear infinite;
+}
+.progress.settled .bar > div::after { animation: none; }
+@keyframes sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .bar > div::after { animation: none; }
+  .bar > div { transition: none; }
+}
+.progress-detail {
+  margin: 8px 0 0; font-size: 0.78rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* results */
+section.group { margin-top: 28px; }
+section.group > h2 { font-size: 1.05rem; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+.count { font-size: 0.72rem; font-weight: 600; background: var(--none-bg); color: var(--none-ink); padding: 2px 8px; border-radius: 99px; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 8px;
+}
+/* Title on the left, the one status that matters on the right, and a chevron
+   for the per-library detail that most of the time nobody needs. */
+.card-head { display: flex; align-items: center; gap: 10px; }
+.card .bk { flex: 1 1 auto; min-width: 0; }
+.card h3 { margin: 0; font-size: 0.98rem; font-weight: 600; line-height: 1.3; }
+.card .byline { margin: 1px 0 0; color: var(--muted); font-size: 0.82rem; }
+.card .best { flex: 0 0 auto; text-decoration: none; }
+.card .best .pill { display: block; }
+
+.expand {
+  /* 44px square: the smallest comfortable touch target, which matters more
+     here than the 16px glyph inside it. Negative margin keeps the card tight. */
+  flex: 0 0 auto; width: 44px; height: 44px; margin: -10px -12px -10px 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: none; padding: 0;
+  color: var(--muted); border-radius: 10px; cursor: pointer;
+}
+.expand svg { width: 16px; height: 16px; transition: transform 0.18s ease; display: block; }
+.card.open .expand svg { transform: rotate(180deg); }
+.expand:hover { color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { .expand svg { transition: none; } }
+
+.card .libs { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.libs { display: flex; flex-direction: column; gap: 9px; }
+/* The first row inside a card now has the divider above it, so its tooltip
+   has room to sit above rather than dropping below. */
+.card .libs > .lib:first-child .queue-pop { bottom: calc(100% + 7px); top: auto; }
+.card .libs > .lib:first-child .queue-pop::after {
+  top: 100%; bottom: auto; border-top-color: var(--tip-bg); border-bottom-color: transparent;
+}
+/* One row per library: name, status, then the queue detail. The name is the
+   only part allowed to shrink, so the numbers never get truncated. */
+.lib { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; position: relative; }
+.lib a, .lib > span.static {
+  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0;
+  text-decoration: none; color: inherit;
+}
+.libname { font-size: 0.85rem; color: var(--muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill {
+  font-size: 0.78rem; font-weight: 600; padding: 3px 10px; border-radius: 99px;
+  white-space: nowrap; flex: 0 0 auto;
+}
+.pill.available { background: var(--ok-bg); color: var(--ok-ink); }
+.pill.holdable { background: var(--hold-bg); color: var(--hold-ink); }
+.pill.unknown, .pill.error { background: var(--err-bg); color: var(--err-ink); }
+/* Queue detail: people waiting, and copies owned. */
+/* The wait time is the answer; the queue behind it is detail. Hidden until
+   asked for — by hovering on a desktop, or by the Show queue toggle, which is
+   the version that works on a phone. */
+/* Lives inside the expanded detail, so it's already behind a deliberate tap. */
+.queue {
+  display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  font-size: 0.74rem; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+
+/* Floats above the row rather than sitting in it, so revealing it on hover
+   never nudges the layout. */
+.queue-pop {
+  position: absolute; right: 0; bottom: calc(100% + 7px); z-index: 5;
+  white-space: nowrap; pointer-events: none;
+  padding: 5px 9px; border-radius: 7px;
+  background: var(--tip-bg); color: var(--tip-ink);
+  font-size: 0.74rem; font-weight: 500;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  /* Hidden by visibility rather than display, so it can fade in on a delay —
+     without one it flickers as the pointer crosses rows on the way somewhere. */
+  visibility: hidden; opacity: 0;
+  transition: opacity 0.12s ease, visibility 0s linear 0.3s;
+}
+/* Small caret, so it reads as belonging to the row below it rather than to the
+   row it happens to be covering. */
+.queue-pop::after {
+  content: ""; position: absolute; top: 100%; right: 14px;
+  border: 5px solid transparent; border-top-color: var(--tip-bg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lib:hover .queue-pop, .lib:focus-within .queue-pop {
+    visibility: visible; opacity: 1;
+    transition: opacity 0.12s ease 0.18s, visibility 0s linear 0.18s;
+  }
+}
+/* The first row in a card has nothing above it to sit over, so it drops below. */
+.libs > .lib:first-child .queue-pop { bottom: auto; top: calc(100% + 7px); }
+.libs > .lib:first-child .queue-pop::after {
+  top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ink);
+}
+.queue-part { display: inline-flex; align-items: center; gap: 3px; }
+.queue svg { width: 12px; height: 12px; fill: currentColor; display: block; }
+
+.legend {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 9px 0 0; font-size: 0.72rem; color: var(--muted); opacity: 0.85;
+}
+.legend .queue { cursor: default; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-item svg { width: 12px; height: 12px; fill: currentColor; display: block; }
+
+.flag { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+
+.notice { border-radius: var(--radius); padding: 12px 16px; margin: 14px 0; font-size: 0.88rem; }
+.notice.warn { background: var(--hold-bg); color: var(--hold-ink); }
+.notice.err { background: var(--err-bg); color: var(--err-ink); }
+.notice.info { background: var(--none-bg); color: var(--none-ink); }
+/* Used for "signed in", "password changed" — the only good news the app
+   announces, and it had no colour of its own until accounts existed. */
+.notice.good { background: var(--ok-bg); color: var(--ok-ink); }
+
+footer {
+  margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 0.78rem;
+}
+footer p { margin: 0 0 10px; }
+footer .setting strong { color: var(--ink); font-weight: 600; }
+footer .setting button { font-size: 0.78rem; padding: 2px 4px; }
+.setting-why { display: block; margin-top: 4px; opacity: 0.85; }
+
+/* The other way into Libby, at the bottom of an expanded card. */
+.alt-link { margin: 10px 0 0; font-size: 0.76rem; }
+.alt-link a { color: var(--accent); text-decoration: none; }
+.alt-link a:hover { text-decoration: underline; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* steps + results header + watch panel */
+ol.steps { list-style: none; margin: 0; padding: 0; }
+.step-no {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 99px; background: var(--accent);
+  color: var(--accent-ink); font-size: 0.72rem; margin-right: 8px;
+}
+.panel h2 { display: flex; align-items: center; }
+.results-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-top: 32px;
+}
+.results-head h2 { margin: 0; font-size: 1.15rem; }
+.results-head .hint { margin: 2px 0 0; }
+select {
+  padding: 10px 12px; font: inherit; font-size: 0.95rem; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+}
+
+/* --- filters and sorting ------------------------------------------------ */
+.controls { margin-top: 14px; }
+/* Three equal segments. Same shape as a tab bar because it does the same job:
+   pick one of a small, fixed set and see the answer change immediately. */
+.segmented {
+  display: flex; gap: 2px; background: var(--none-bg);
+  border-radius: 10px; padding: 3px; margin-bottom: 10px;
+}
+.segmented button {
+  flex: 1; border: none; background: transparent; border-radius: 8px;
+  padding: 8px 10px; font-size: 0.88rem; color: var(--muted); min-height: 38px;
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--card); color: var(--ink); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.segmented button:disabled { opacity: 0.45; cursor: not-allowed; }
+#format-note { margin: -4px 0 10px; }
+/* Which format a merged row is. Quiet on purpose — the status is the answer,
+   this only says what kind of thing the answer is about. */
+.fmt-tag {
+  flex: 0 0 auto; font-size: 0.68rem; letter-spacing: .02em;
+  color: var(--none-ink); background: var(--none-bg);
+  padding: 2px 7px; border-radius: 99px;
+}
+.control-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.control-line #q { flex: 1 1 200px; min-width: 0; }
+.control-line select { flex: 0 1 auto; }
+#btn-filters { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; }
+#btn-filters .badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  background: var(--accent); color: var(--accent-ink); font-size: 0.72rem;
+}
+#btn-filters[aria-expanded="true"] { border-color: var(--accent); }
+.filter-panel {
+  display: grid; gap: 12px; margin-top: 10px; padding: 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+.filter { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.filter label { font-size: 0.82rem; color: var(--muted); }
+.filter select { width: 100%; }
+.filter-panel #btn-clear-filters { justify-self: start; align-self: end; }
+.control-note {
+  margin: 8px 0 0; font-size: 0.85rem; color: var(--muted);
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.control-note button.link { font-size: 0.85rem; }
+@media (max-width: 520px) {
+  .control-line #q { flex: 1 1 100%; }
+  .control-line select, #btn-filters { flex: 1 1 0; }
+  .filter-panel { grid-template-columns: 1fr; }
+}
+.switch { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--ink); margin-bottom: 10px; }
+.switch input { width: 18px; height: 18px; accent-color: var(--accent); }
+.notice.changes { background: var(--card); border: 1px solid var(--accent); }
+.notice.changes ul { margin: 8px 0 0; padding-left: 18px; }
+.notice.changes li { margin-bottom: 4px; }
+.notice.changes li.good::marker { color: var(--ok-ink); }
+.notice.changes li.warn::marker { color: var(--hold-ink); }
+
+
+/* header + theme toggle + long lists */
+.header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+/* One round button carrying the theme you'd get by pressing it. 44px so it's a
+   real touch target, with the glyph itself kept small inside that. */
+.theme-toggle {
+  flex: 0 0 auto; width: 44px; height: 44px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 99px; border: 1px solid var(--line);
+  background: var(--card); color: var(--muted);
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--accent); }
+.theme-toggle svg { width: 19px; height: 19px; fill: currentColor; }
+.theme-toggle svg g { fill: none; }
+.show-all {
+  display: block; width: 100%; margin-top: 4px; background: var(--card);
+  border: 1px dashed var(--line); color: var(--muted);
+}
+.show-all:hover { color: var(--ink); border-color: var(--accent); }
+
+/* --- accounts ----------------------------------------------------------- */
+.wrap.narrow { max-width: 460px; }
+a.plain { color: inherit; text-decoration: none; }
+.centred { text-align: center; }
+
+.auth-panel { margin-top: 20px; }
+.auth-title { margin: 0 0 4px; font-size: 1.15rem; }
+.auth-panel .hint { margin: 0 0 16px; }
+.tabs { display: flex; gap: 2px; background: var(--none-bg); border-radius: 10px;
+  padding: 3px; margin-bottom: 18px; }
+.tabs button {
+  flex: 1; border: none; background: transparent; border-radius: 8px;
+  padding: 9px 10px; font-size: 0.92rem; color: var(--muted); min-height: 0;
+}
+.tabs button[aria-selected="true"] { background: var(--card); color: var(--ink); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; }
+.field label { font-size: 0.86rem; color: var(--muted); }
+.field input {
+  padding: 12px; font: inherit; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; width: 100%;
+}
+.field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.field .hint { margin: 0; font-size: 0.8rem; }
+.pw { display: flex; gap: 6px; align-items: stretch; }
+.pw input { flex: 1 1 auto; min-width: 0; }
+.peek { flex: 0 0 auto; font-size: 0.85rem; padding: 0 12px; }
+button.wide { width: 100%; justify-content: center; }
+.auth-links { margin: 14px 0 0; text-align: center; }
+.sent { margin: 0; }
+.sent p { margin: 0 0 10px; }
+
+/* the signed-in strip on the main page */
+.account-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 0.85rem; color: var(--muted); margin: -6px 0 18px;
+}
+.account-bar .who { display: inline-flex; align-items: center; gap: 6px; }
+.account-bar .dot { width: 7px; height: 7px; border-radius: 99px; background: var(--ok-ink); }
+.account-bar .spacer { flex: 1 1 auto; }
+.account-bar button.link { font-size: 0.85rem; }

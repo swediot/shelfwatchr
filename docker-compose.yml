@@ -1,0 +1,44 @@
+services:
+  shelfwatchr:
+    build: .
+    container_name: shelfwatchr
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    # Without this the JSON log file grows forever on a box meant to run for years.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      # Where the site is reachable, so notification links work.
+      SHELFWATCHR_PUBLIC_URL: "http://homeserver.local:8080"
+
+      # Politeness towards OverDrive. One global budget for the whole server.
+      SHELFWATCHR_RPM: "60"
+      SHELFWATCHR_CONCURRENCY: "3"
+
+      # Automatic re-checks (UTC hour).
+      SHELFWATCHR_REFRESH: "1"
+      SHELFWATCHR_REFRESH_HOUR: "4"
+
+      # Matching strictness — lower it if books you know your library has come
+      # back as "not in catalogue".
+      SHELFWATCHR_MATCH_THRESHOLD: "0.78"
+
+      # Report books that stopped being available. Off by default: it's not
+      # something you can act on, and it makes the alerts read like bad news.
+      # SHELFWATCHR_REPORT_REMOVALS: "1"
+
+      # Ceiling on a single upload.
+      SHELFWATCHR_MAX_BOOKS: "5000"
+
+      # Optional: email alerts. Without these, ntfy and webhooks still work.
+      # SHELFWATCHR_SMTP_HOST: "smtp.example.com"
+      # SHELFWATCHR_SMTP_PORT: "587"
+      # SHELFWATCHR_SMTP_USER: "you@example.com"
+      # SHELFWATCHR_SMTP_PASS: "an-app-password"
+      # SHELFWATCHR_SMTP_FROM: "Shelfwatch <you@example.com>"

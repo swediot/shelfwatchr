@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Shelfwatchr</title>
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+</head>
+<body>
+<div class="wrap narrow">
+
+  <header>
+    <div class="header-row">
+      <div>
+        <h1><a href="/" class="plain">Shelfwatchr</a></h1>
+        <p id="lede">Keep your list on the server, so it's there on every device.</p>
+      </div>
+      <button type="button" id="theme-toggle" class="theme-toggle"
+              aria-label="Switch theme" title="Switch theme"></button>
+    </div>
+  </header>
+
+  <div id="messages" role="status" aria-live="polite"></div>
+  <p class="notice warn" id="server-note" hidden></p>
+
+  <!-- One panel, four modes. They share the email and password fields, so
+       switching between them keeps what you've already typed. -->
+  <div class="panel auth-panel">
+    <div class="tabs" id="tabs" role="tablist">
+      <button type="button" role="tab" data-mode="signin" aria-selected="true">Sign in</button>
+      <button type="button" role="tab" data-mode="signup" aria-selected="false">Create account</button>
+    </div>
+
+    <form id="auth-form" novalidate>
+      <h2 id="auth-title" class="auth-title">Sign in</h2>
+      <p class="hint" id="auth-blurb"></p>
+
+      <div class="field" id="field-email">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" autocomplete="username"
+               inputmode="email" autocapitalize="none" spellcheck="false" required>
+      </div>
+
+      <div class="field" id="field-password">
+        <label for="password" id="password-label">Password</label>
+        <div class="pw">
+          <input type="password" id="password" name="password" autocomplete="current-password" required>
+          <button type="button" id="btn-peek" class="peek" aria-pressed="false"
+                  aria-label="Show password">Show</button>
+        </div>
+        <p class="hint" id="password-hint">At least 10 characters.</p>
+      </div>
+
+      <button type="submit" class="primary wide" id="btn-submit">Sign in</button>
+
+      <p class="auth-links">
+        <button type="button" class="link" data-mode="forgot" id="link-forgot">Forgot your password?</button>
+        <button type="button" class="link" data-mode="signin" id="link-back" hidden>Back to sign in</button>
+      </p>
+    </form>
+
+    <p class="hint sent" id="sent-note" hidden></p>
+  </div>
+
+  <p class="hint centred">
+    <a href="/">Continue without an account</a>
+  </p>
+
+</div>
+<script src="/static/signin.js"></script>
+</body>
+</html>
