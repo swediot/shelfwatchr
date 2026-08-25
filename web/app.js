@@ -445,12 +445,17 @@ const SHELF_LABEL = {
   "did-not-finish": "Did not finish",
 };
 
-async function uploadCsv(file, statuses = "to-read") {
+// A shelf menu value is "to-read" or "to-read|unowned": the shelf, and
+// whether books the export marks as owned are left out of it.
+const UNOWNED = "|unowned";
+
+async function uploadCsv(file, choice = "to-read") {
   if (!file) return;
   state.file = file;
   const body = new FormData();
   body.append("file", file);
-  const excludeOwned = $("owned-exclude").checked;
+  const excludeOwned = choice.endsWith(UNOWNED);
+  const statuses = excludeOwned ? choice.slice(0, -UNOWNED.length) : choice;
   $("csv-report").replaceChildren(el("p", { class: "empty-note", text: `Reading ${file.name}…` }));
   try {
     const data = await api(
@@ -462,7 +467,7 @@ async function uploadCsv(file, statuses = "to-read") {
       state.books = data.books;
       state.pendingUpload = null;
     }
-    renderCsvReport(data.report, statuses);
+    renderCsvReport(data.report, choice);
   } catch (err) {
     $("shelf-row").hidden = true;
     $("csv-report").replaceChildren(el("div", { class: "notice err", text: err.message }));
@@ -470,22 +475,26 @@ async function uploadCsv(file, statuses = "to-read") {
 }
 
 function renderCsvReport(report, chosen) {
+  const shelf = chosen.endsWith(UNOWNED) ? chosen.slice(0, -UNOWNED.length) : chosen;
   const shelves = Object.keys(report.statuses_found || {});
-  if (!shelves.includes(chosen)) shelves.unshift(chosen);
+  if (!shelves.includes(shelf)) shelves.unshift(shelf);
 
-  $("shelf-select").replaceChildren(...shelves.map((s) => {
+  const options = [];
+  for (const s of shelves) {
     const n = report.statuses_found?.[s];
     const label = SHELF_LABEL[s] || s;
-    return el("option", { value: s, selected: s === chosen }, n ? `${label} (${n})` : label);
-  }));
+    options.push(el("option", { value: s, selected: s === chosen }, n ? `${label} (${n})` : label));
+    // The owned count is only known for the shelf that was just imported, so
+    // the "unowned" variant sits directly under that one. The export has to
+    // say what you own for it to mean anything.
+    if (s === shelf && report.has_owned) {
+      const left = (n || 0) - (report.owned || 0);
+      options.push(el("option", { value: s + UNOWNED, selected: chosen.endsWith(UNOWNED) },
+        `${label}, unowned (${left})`));
+    }
+  }
+  $("shelf-select").replaceChildren(...options);
   $("shelf-row").hidden = false;
-
-  // The switch only earns its place when the export says what you own and
-  // at least one book on this shelf is. Otherwise it's a control that does
-  // nothing, which is worse than no control.
-  const owned = report.owned || 0;
-  $("owned-line").hidden = !(report.has_owned && owned);
-  $("owned-label").textContent = `Skip books I own (${owned})`;
 
   // Nothing under the row. The shelf menu carries the count, and the button
   // says what it does — everything else that used to live here (which export,
@@ -1626,7 +1635,6 @@ async function init() {
   });
   $("csv-input").addEventListener("change", (e) => uploadCsv(e.target.files[0]));
   $("shelf-select").addEventListener("change", (e) => uploadCsv(state.file, e.target.value));
-  $("owned-exclude").addEventListener("change", () => uploadCsv(state.file, $("shelf-select").value));
   $("btn-check").addEventListener("click", () => {
     // With a saved list open and a new export waiting, checking means saving
     // it first — otherwise the report and the saved list quietly disagree.
