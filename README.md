@@ -494,9 +494,13 @@ All environment variables, all optional. `SHELFWATCH_*` (no R) still works.
 - **Some wait times are estimates.** OverDrive usually reports one; when it
   doesn't, the wait is derived from the hold queue and copy count (assuming
   ~18-day loans) and marked with `~`.
-- **No accounts.** Saved lists are protected only by an unguessable link.
-- **Ebooks are supported but off.** Add `"ebook-overdrive"` to a saved list's
-  formats to check both; the report keeps the better result per library.
+- **A shared link is a shared list.** A list that belongs to an account can only
+  be *changed* by that account, but anyone holding the link can read it. Lists
+  saved without an account are protected by nothing but the link being
+  unguessable.
+- **Ebook coverage is thinner than audiobook coverage** at most libraries, so
+  the Ebooks view will usually be the shorter list. That's the catalogue, not
+  the matching.
 - **It can't place holds.** That needs your card, and handing this thing your
   library credentials is not a trade worth making. Every entry links straight
   through to Libby, which is one tap.
