@@ -15,13 +15,17 @@ const state = {
   slug: null,
   listName: "",
   jobId: null,
-  channels: { ntfy: true, webhook: true, email: false },
   running: false,
   generatedAt: null,
   expanded: {},          // group key -> showing everything
   pendingUpload: null,   // books from a new CSV, waiting to update a saved list
   auth: null,            // null until /api/auth/me answers; then {accounts, user, ...}
   claimOffered: false,   // so the offer to attach a list to the account shows once
+  // The upload panel steps aside once there's a report, but not while there's
+  // a file sitting in it waiting to be checked — that would take the Check
+  // button away mid-flow. Set when the panel is deliberately opened, cleared
+  // when a check is actually requested.
+  uploadOpen: false,
 };
 
 /* ------------------------------------------------------------ storage */
@@ -219,6 +223,24 @@ const ICON_COPIES =
   '<rect x="2" y="2.5" width="7.5" height="11" rx="1"/>' +
   '<rect x="10.5" y="4.2" width="3.6" height="9.3" rx="1" opacity=".55"/></svg>';
 
+/* Headphones and a book: which edition a "both" row is talking about. */
+const ICON_AUDIO =
+  '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+  '<path d="M8 1.6a6 6 0 0 0-6 6v3.2h1.6V7.6a4.4 4.4 0 0 1 8.8 0v3.2H14V7.6a6 6 0 0 0-6-6z"/>' +
+  '<rect x="1.2" y="9.4" width="3.2" height="5" rx="1.6"/>' +
+  '<rect x="11.6" y="9.4" width="3.2" height="5" rx="1.6"/></svg>';
+// A page of text, not a book. ICON_COPIES is already a book — two solid
+// panels — and it sits inches away on the same row, where "which edition" and
+// "how many copies" both rendered as small dark book shapes and neither read
+// as anything. Outlined rather than solid for the same reason: nothing else on
+// the line is drawn that way.
+const ICON_EBOOK =
+  '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+  '<rect x="3.1" y="1.7" width="9.8" height="12.6" rx="1.6" fill="none" ' +
+  'stroke="currentColor" stroke-width="1.4"/>' +
+  '<path d="M5.7 5.5h4.6M5.7 8h4.6M5.7 10.5h2.7" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.3" stroke-linecap="round"/></svg>';
+
 function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -405,6 +427,7 @@ function renderChips() {
     return el("span", { class: "chip" }, s.name, remove);
   }));
   $("lib-empty").hidden = state.scopes.length > 0;
+  renderLibsSummary();
 }
 
 function addScope(scope) {
@@ -445,21 +468,25 @@ const SHELF_LABEL = {
   "did-not-finish": "Did not finish",
 };
 
-// A shelf menu value is "to-read" or "to-read|unowned": the shelf, and
-// whether books the export marks as owned are left out of it.
-const UNOWNED = "|unowned";
-
+// Books the export marks as owned are always left out. There used to be a
+// second menu entry per shelf — "To read" and "To read, unowned" — which asked
+// people to choose between a list with books they already have and a list
+// without them. Nobody wants the library's copy of a book on their own shelf,
+// so the choice only ever had one sensible answer and made the menu twice as
+// long to say so. Exports that don't record ownership are unaffected: there is
+// nothing to exclude, and the count is the same either way.
 async function uploadCsv(file, choice = "to-read") {
   if (!file) return;
   state.file = file;
   const body = new FormData();
   body.append("file", file);
-  const excludeOwned = choice.endsWith(UNOWNED);
-  const statuses = excludeOwned ? choice.slice(0, -UNOWNED.length) : choice;
+  state.uploadOpen = true;
+  setUploadPanelVisible(true);
+  showLoadedFile(file);
   $("csv-report").replaceChildren(el("p", { class: "empty-note", text: `Reading ${file.name}…` }));
   try {
     const data = await api(
-      `/api/import?statuses=${encodeURIComponent(statuses)}&exclude_owned=${excludeOwned}`,
+      `/api/import?statuses=${encodeURIComponent(choice)}&exclude_owned=true`,
       { method: "POST", body });
     if (state.slug && state.books.length) {
       state.pendingUpload = data.books;      // a saved list is open: offer to update it
@@ -475,26 +502,24 @@ async function uploadCsv(file, choice = "to-read") {
 }
 
 function renderCsvReport(report, chosen) {
-  const shelf = chosen.endsWith(UNOWNED) ? chosen.slice(0, -UNOWNED.length) : chosen;
   const shelves = Object.keys(report.statuses_found || {});
-  if (!shelves.includes(shelf)) shelves.unshift(shelf);
+  if (!shelves.includes(chosen)) shelves.unshift(chosen);
 
   const options = [];
   for (const s of shelves) {
-    const n = report.statuses_found?.[s];
     const label = SHELF_LABEL[s] || s;
-    options.push(el("option", { value: s, selected: s === chosen }, n ? `${label} (${n})` : label));
-    // The owned count is only known for the shelf that was just imported, so
-    // the "unowned" variant sits directly under that one. The export has to
-    // say what you own for it to mean anything.
-    if (s === shelf && report.has_owned) {
-      const left = (n || 0) - (report.owned || 0);
-      options.push(el("option", { value: s + UNOWNED, selected: chosen.endsWith(UNOWNED) },
-        `${label}, unowned (${left})`));
-    }
+    // For the shelf actually imported, `imported` is the count after owned
+    // books were dropped, which is the number the button is about to check.
+    // For the others all we have is the raw tally; picking one re-imports and
+    // corrects it. Better a count that's right for what's selected than one
+    // that's uniformly a little wrong.
+    const n = s === chosen ? report.imported : report.statuses_found?.[s];
+    options.push(el("option", { value: s, selected: s === chosen },
+                    n == null ? label : `${label} (${n})`));
   }
   $("shelf-select").replaceChildren(...options);
   $("shelf-row").hidden = false;
+  showLoadedFile(state.file, report);
 
   // Nothing under the row. The shelf menu carries the count, and the button
   // says what it does — everything else that used to live here (which export,
@@ -513,6 +538,57 @@ function renderCsvReport(report, chosen) {
     $("btn-check").disabled = report.imported === 0;
   }
   $("csv-report").replaceChildren();
+}
+
+/* ------------------------------------------------------------- panels */
+
+/* The dropzone stops saying "drop your CSV here" once you have. Leaving it
+   unchanged after an upload is the single most confusing thing the page did:
+   the file went, the shelf menu appeared below the fold, and the big dashed
+   box still read like nothing had happened. */
+function showLoadedFile(file, report) {
+  const dz = $("dropzone");
+  if (!file) {
+    dz.classList.remove("loaded");
+    dz.replaceChildren(el("strong", { text: "Drop your CSV here" }),
+                       el("br"), document.createTextNode("or click to choose a file"));
+    return;
+  }
+  dz.classList.add("loaded");
+  const count = report && report.imported != null
+    ? `${report.imported.toLocaleString()} book${report.imported === 1 ? "" : "s"} ready to check`
+    : "Reading…";
+  dz.replaceChildren(
+    el("strong", { class: "dz-file", text: file.name }),
+    el("span", { class: "dz-swap", text: count + " — click to choose a different file" }));
+}
+
+/* Panel one folds up once the libraries are settled, and says which ones in a
+   line. The trigger is a finished report rather than the first chip: collapsing
+   the moment a library is picked would yank the search box away from someone
+   halfway through picking a second. */
+function setPanelCollapsed(collapsed) {
+  const panel = $("panel-libs");
+  const toggle = $("libs-toggle");
+  panel.classList.toggle("collapsed", collapsed);
+  toggle.textContent = collapsed ? "Change" : "Hide";
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  $("libs-summary").hidden = !collapsed;
+}
+
+function renderLibsSummary() {
+  const names = state.scopes.map((sc) => sc.name);
+  $("libs-summary").textContent = names.length ? names.join(" · ") : "No libraries picked yet.";
+  $("libs-toggle").hidden = names.length === 0;
+  if (!names.length) setPanelCollapsed(false);
+}
+
+/* Once there is a report, the upload panel has said everything it has to say
+   and gets out of the way of it. "Upload new list" by the Re-check button
+   brings it back. */
+function setUploadPanelVisible(visible) {
+  $("panel-list").hidden = !visible;
+  $("btn-new-list").hidden = visible || state.results.length === 0;
 }
 
 async function updateSavedList() {
@@ -630,6 +706,9 @@ async function runLookup(books, { refresh = false } = {}) {
   if (!books.length) { message("Nothing to look up.", "warn"); return; }
 
   clearMessage();
+  // The check has been asked for, so the upload panel has no more to say and
+  // can fold away when the report lands.
+  state.uploadOpen = false;
   state.results = [];
   state.expanded = {};
   $("results").replaceChildren();
@@ -761,6 +840,24 @@ function bestResult(book) {
   })[0];
 }
 
+/* Which edition a row or a headline is offering, as a glyph.
+   Only on "both": in a single-format view every row is that format, so the
+   marker would be on every line and mean nothing. */
+function fmtTag(av) {
+  if (view.format !== "both" || !av || !av.fmt) return null;
+  // The glyph means "this is the edition you'd be borrowing", which is only
+  // true if there is one. On a book no library carries, a book icon next to
+  // "Not in catalogue" claims an ebook exists that doesn't.
+  if (av.status !== "available" && av.status !== "holdable") return null;
+  const ebook = av.fmt === "ebook-overdrive";
+  const word = ebook ? "Ebook" : "Audiobook";
+  // role/aria-label rather than the bare glyph: the icon is the whole of the
+  // information here, so it has to have a name a screen reader can read.
+  const tag = el("span", { class: "fmt-tag", title: word, role: "img", "aria-label": word });
+  tag.innerHTML = ebook ? ICON_EBOOK : ICON_AUDIO;
+  return tag;
+}
+
 function libRow(av) {
   const pill = el("span", {
     class: `pill ${av.status}`,
@@ -770,10 +867,7 @@ function libRow(av) {
   // On "both" a row is whichever format won for that library, and without
   // saying which, "Available at Westmount" doesn't tell you what to borrow.
   // In a single-format view every row is that format, so the tag is noise.
-  const tag = view.format === "both" && av.fmt
-    ? el("span", { class: "fmt-tag", title: av.format },
-         av.fmt === "ebook-overdrive" ? "Ebook" : "Audio")
-    : null;
+  const tag = fmtTag(av);
   const attrs = linkAttrs(av);
   // The queue glyphs go *before* the pill, inside the same flex line. They used
   // to follow it as a sibling, which pushed the pill left by however wide the
@@ -820,10 +914,14 @@ function bookCard(book) {
     "aria-label": pillLabel(best),
   }, best.status === "available" ? "Available" : pillText(best));
   const attrs = linkAttrs(best);
+  // The headline says what you can do about this book; on "both" it also has to
+  // say which edition it means, or "Available" is only half an answer and the
+  // rest is behind a chevron most cards don't even have.
+  const headTag = fmtTag(best);
   const openBest = attrs
     ? el("a", Object.assign({ class: "best", title: `Open in Libby — ${best.scope_name}` }, attrs),
-         summary)
-    : el("span", { class: "best" }, summary);
+         headTag, summary)
+    : el("span", { class: "best" }, headTag, summary);
 
   const card = el("article", { class: "card" });
   const head = el("div", { class: "card-head" },
@@ -1333,7 +1431,16 @@ function paint() {
   }
   $("results").replaceChildren(...out);
 
-  $("results-head").hidden = state.results.length === 0;
+  const haveReport = state.results.length > 0;
+  $("results-head").hidden = !haveReport;
+  // A finished report is the signal that setup is done: fold the libraries
+  // away and hide the upload panel, both reopenable.
+  if (haveReport && !state.running) {
+    if (state.scopes.length) setPanelCollapsed(true);
+    // Not while a freshly dropped file is still waiting for its check.
+    if (!state.uploadOpen && !state.pendingUpload) setUploadPanelVisible(false);
+    else $("btn-new-list").hidden = true;
+  }
   syncControls();
   if (state.results.length) renderControlNote(shown);
   if (state.results.length) {
@@ -1448,20 +1555,31 @@ function renderWatchPanel(prof) {
   if (!state.slug) return;
   $("watch-enabled").checked = !!prof?.watch_enabled;
   $("watch-frequency").value = prof?.watch_frequency || "weekly";
-  $("notify-type").value = prof?.notify_type || "none";
+  const type = prof?.notify_type || "none";
+  const menu = $("notify-type");
+  // Webhook and email are no longer offered, but a list configured for one
+  // before they were withdrawn still is. Assigning a value the menu doesn't
+  // have silently selects the first option instead — so the next Save would
+  // quietly switch that list to "nothing", which is not a thing to do to
+  // someone's notifications. Put the option back for that list only.
+  if (type !== "none" && !menu.querySelector(`option[value="${CSS.escape(type)}"]`)) {
+    menu.append(el("option", { value: type },
+      `${type === "email" ? "Email digest" : "Webhook"} (set up earlier)`));
+  }
+  menu.value = type;
   $("notify-target").value = prof?.notify_target || "";
-  const emailOption = $("notify-type").querySelector('option[value="email"]');
-  emailOption.disabled = !state.channels.email;
-  emailOption.textContent = state.channels.email
-    ? "Email digest" : "Email digest (no SMTP on this server)";
   updateNotifyHint();
 }
 
+// Webhook and email are gone from the menu. The server still implements both
+// and an existing list configured for either keeps working — this only stops
+// offering them, since email needs SMTP credentials this instance doesn't
+// have and a webhook needs somewhere to point it.
 const NOTIFY_HINT = {
   none: "Changes still show at the top of the report when you open it — nothing gets sent.",
   ntfy: "A topic name of your choosing. Install the ntfy app, subscribe to the same topic, and alerts arrive as push notifications. Pick something nobody would guess.",
-  webhook: "Any URL that accepts a JSON POST — a Discord or Slack webhook, Home Assistant, your own script.",
-  email: "A proper digest: what became available, what's newly holdable, which waits moved, and what's on the shelf right now.",
+  webhook: "Set up before webhooks were taken off the menu. It still works; picking anything else here is one way.",
+  email: "Set up before email was taken off the menu. It still works; picking anything else here is one way.",
 };
 
 function updateNotifyHint() {
@@ -1470,9 +1588,7 @@ function updateNotifyHint() {
   $("notify-target").hidden = type === "none";
   $("notify-target-label").hidden = type === "none";
   $("btn-test-notify").hidden = type === "none";
-  $("notify-target").placeholder = {
-    ntfy: "shelfwatchr-a7f3k2", webhook: "https://…", email: "you@example.com", none: "",
-  }[type] || "";
+  $("notify-target").placeholder = { ntfy: "shelfwatchr-a7f3k2", none: "" }[type] || "";
 }
 
 async function saveWatch() {
@@ -1484,8 +1600,9 @@ async function saveWatch() {
       notify_target: $("notify-target").value,
     }));
     const freq = $("watch-frequency").value === "weekly" ? "once a week" : "every day";
-    const how = { none: "", email: ", and emails you a digest",
-                  ntfy: ", and pushes you an alert", webhook: ", and posts to your webhook" }[$("notify-type").value] || "";
+    const how = { none: "", ntfy: ", and pushes you an alert",
+                  email: ", and emails you a digest",
+                  webhook: ", and posts to your webhook" }[$("notify-type").value] || "";
     $("watch-result").textContent = $("watch-enabled").checked
       ? `Saved. This list gets re-checked ${freq}${how}.`
       : "Saved. Automatic checks are off.";
@@ -1508,6 +1625,35 @@ async function testNotify() {
 }
 
 /* ------------------------------------------------------------ profile */
+
+/* Clipboard, with the old command as a fallback and honest about failing.
+   navigator.clipboard is absent on plain HTTP, which is exactly how a LAN
+   instance of this gets used. */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* denied or not focused — try the old way */ }
+  try {
+    const ta = el("textarea", { value: text, "aria-hidden": "true" });
+    ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function flashCopied(btn) {
+  const was = btn.textContent;
+  btn.textContent = "Link copied";
+  setTimeout(() => { btn.textContent = was; }, 1800);
+}
 
 async function saveProfile() {
   const body = {
@@ -1532,11 +1678,19 @@ async function saveProfile() {
     save();
     const link = `${location.origin}/?p=${data.slug}`;
     history.replaceState(null, "", `/?p=${data.slug}`);
+    // The point of the link is to go somewhere else with it, so put it on the
+    // clipboard rather than making everyone select it by hand. Say whether
+    // that worked: clipboard access is refused often enough — insecure origin,
+    // a permissions prompt, an unfocused tab — that claiming success blindly
+    // would send people off to paste nothing.
+    const copied = await copyText(link);
     $("save-result").replaceChildren(
       document.createTextNode(signedIn()
-        ? "Saved to your account. It's also at this link: "
-        : "Saved. Your link: "),
+        ? (copied ? "Saved to your account, and the link is on your clipboard: "
+                  : "Saved to your account. It's also at this link: ")
+        : (copied ? "Saved, and the link is on your clipboard: " : "Saved. Your link: ")),
       el("a", { href: link, text: link }));
+    if (copied) flashCopied($("btn-save"));
     renderWatchPanel(await api(`/api/profile/${data.slug}`));
   } catch (err) {
     $("save-result").textContent = `Could not save: ${err.message}`;
@@ -1615,7 +1769,6 @@ async function init() {
   loadView();
   bindControls();
   renderChips();
-  try { state.channels = await api("/api/notify/channels"); } catch (_) { /* defaults fine */ }
 
   $("lib-search").addEventListener("input", (e) => searchLibraries(e.target.value));
   document.addEventListener("click", (e) => {
@@ -1656,6 +1809,21 @@ async function init() {
       ? state.books
       : state.results.map((r) => ({ title: r.title, author: r.author, isbn: "" })),
       { refresh: true });
+  });
+
+  $("libs-toggle").addEventListener("click", () => {
+    setPanelCollapsed(!$("panel-libs").classList.contains("collapsed"));
+  });
+
+  $("btn-new-list").addEventListener("click", () => {
+    // Start the panel clean rather than showing the previous file's name: the
+    // button was pressed to replace that list, not to be reminded of it.
+    state.uploadOpen = true;
+    state.file = null;
+    showLoadedFile(null);
+    $("shelf-row").hidden = true;
+    setUploadPanelVisible(true);
+    $("panel-list").scrollIntoView({ behavior: "smooth", block: "center" });
   });
 
   $("btn-save").addEventListener("click", saveProfile);

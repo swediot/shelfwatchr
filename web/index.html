@@ -31,8 +31,16 @@
 
   <ol class="steps">
 
-    <li class="panel">
-      <h2><span class="step-no">1</span> Your libraries</h2>
+    <li class="panel" id="panel-libs">
+      <div class="panel-head">
+        <h2>Your libraries</h2>
+        <!-- Only appears once there is something to collapse, so an empty panel
+             never offers to hide itself. -->
+        <button type="button" class="link panel-toggle" id="libs-toggle"
+                aria-expanded="true" aria-controls="libs-body" hidden>Hide</button>
+      </div>
+      <p class="panel-summary" id="libs-summary" hidden></p>
+      <div class="panel-body" id="libs-body">
       <p class="hint">Search by name, or paste the word after <code>libbyapp.com/library/</code>.</p>
       <div class="picker">
         <label for="lib-search" class="sr-only">Search for a library</label>
@@ -42,12 +50,18 @@
       </div>
       <div class="chips" id="lib-chips"></div>
       <p class="empty-note" id="lib-empty">No libraries picked yet.</p>
+      </div>
     </li>
 
-    <li class="panel">
-      <h2><span class="step-no">2</span> Your reading list</h2>
+    <li class="panel" id="panel-list">
+      <div class="panel-head">
+        <h2>Your reading list</h2>
+      </div>
       <p class="hint">A StoryGraph or Goodreads CSV export.</p>
 
+      <!-- Says "drop a CSV" until there is one, then says which one and how
+           many books came out of it. A dropzone that looks untouched after an
+           upload reads as an upload that failed. -->
       <div class="dropzone" id="dropzone" tabindex="0" role="button">
         <strong>Drop your CSV here</strong><br>
         or click to choose a file
@@ -101,6 +115,7 @@
     <div class="row">
       <button id="btn-download">Download</button>
       <button id="btn-recheck">Re-check</button>
+      <button id="btn-new-list">Upload new list</button>
     </div>
   </div>
 
@@ -210,8 +225,6 @@
         <select id="notify-type">
           <option value="none">Nothing &mdash; just show it here</option>
           <option value="ntfy">Phone push (ntfy)</option>
-          <option value="webhook">Webhook</option>
-          <option value="email">Email digest</option>
         </select>
       </div>
     </div>

@@ -135,6 +135,12 @@ button.link {
   text-align: center; color: var(--muted); font-size: 0.9rem; cursor: pointer;
 }
 .dropzone.over { border-color: var(--accent); color: var(--ink); }
+.dropzone.loaded {
+  border-style: solid; border-color: var(--ok-line, var(--accent));
+  color: var(--ink); text-align: left; padding: 14px 16px;
+}
+.dropzone.loaded .dz-file { display: block; overflow-wrap: anywhere; }
+.dropzone.loaded .dz-swap { color: var(--muted); font-size: 0.82rem; }
 
 /* progress */
 .progress {
@@ -221,7 +227,12 @@ section.group.shut .group-head .chev svg { transform: rotate(-90deg); }
 .card .bk { flex: 1 1 auto; min-width: 0; }
 .card h3 { margin: 0; font-size: 0.98rem; font-weight: 600; line-height: 1.3; }
 .card .byline { margin: 1px 0 0; color: var(--muted); font-size: 0.82rem; }
-.card .best { flex: 0 0 auto; text-decoration: none; }
+/* The glyph sits beside the pill, not above it: .best used to hold one child
+   and the pill was a block, so a second child would have stacked under it. */
+.card .best {
+  flex: 0 0 auto; text-decoration: none;
+  display: flex; align-items: center; gap: 6px;
+}
 .card .best .pill { display: block; min-width: 5.25rem; text-align: center; }
 
 .expand {
@@ -338,12 +349,20 @@ footer .setting button { font-size: 0.78rem; padding: 2px 4px; }
 
 /* steps + results header + watch panel */
 ol.steps { list-style: none; margin: 0; padding: 0; }
-.step-no {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border-radius: 99px; background: var(--accent);
-  color: var(--accent-ink); font-size: 0.72rem; margin-right: 8px;
+
+/* A panel that has done its job folds away, leaving one line saying what it
+   decided and a way back in. The numbering went with it: with step two hidden
+   once a report exists, a lone "1" labels a sequence of one. */
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.panel-head h2 { margin: 0; }
+.panel-toggle { flex: 0 0 auto; font-size: 0.8rem; }
+.panel-summary {
+  margin: 4px 0 0; color: var(--muted); font-size: 0.84rem;
+  overflow-wrap: anywhere;
 }
-.panel h2 { display: flex; align-items: center; }
+.panel.collapsed { padding-block: 12px; }
+.panel.collapsed .panel-body { display: none; }
+
 .results-head {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 12px; flex-wrap: wrap; margin-top: 32px;
@@ -375,11 +394,16 @@ select {
 #format-note { margin: -4px 0 10px; }
 /* Which format a merged row is. Quiet on purpose — the status is the answer,
    this only says what kind of thing the answer is about. */
+/* On "both", each library row is whichever edition won there, and the row has
+   to say which — "Available at Westmount" otherwise doesn't tell you what you
+   are borrowing. A glyph rather than the word: it sits in a crowded flex line
+   next to the queue counts and the pill, and two of those were already icons.
+   The accessible name still says the word. */
 .fmt-tag {
-  flex: 0 0 auto; font-size: 0.68rem; letter-spacing: .02em;
-  color: var(--none-ink); background: var(--none-bg);
-  padding: 2px 7px; border-radius: 99px;
+  flex: 0 0 auto; display: inline-flex; align-items: center;
+  color: var(--muted);
 }
+.fmt-tag svg { width: 14px; height: 14px; fill: currentColor; display: block; }
 .control-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .control-line #q { flex: 1 1 200px; min-width: 0; }
 .control-line select { flex: 0 1 auto; }
