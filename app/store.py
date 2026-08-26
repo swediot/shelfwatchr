@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS title_map (
   matched_author TEXT DEFAULT '',
   score       REAL DEFAULT 0,
   resolved_at REAL NOT NULL,
+  resolver    TEXT NOT NULL DEFAULT '',   -- which resolver learned it; see RESOLVER
   PRIMARY KEY (book_key, fmt)
 );
 
@@ -198,6 +199,19 @@ def db():
         raise
 
 
+# What resolved a learned OverDrive id. Bumping this retires every id learned
+# by an older resolver: reads ignore them and the next migration deletes them.
+#
+# It exists because of what shipped before it. The multi-library search endpoint
+# takes a format parameter and ignores it, so until that was filtered client
+# side, an audiobook lookup could resolve to the ebook's id and be remembered
+# under `audiobook-overdrive` — and remembered for thirty days, which is how
+# long a fix would otherwise take to become visible. Code alone could not undo
+# that; the wrong answers were already on disk. Anything that changes which id
+# a title resolves to needs this bumped in the same commit.
+RESOLVER = "fmt-filtered-v2"
+
+
 # Columns added to existing tables after the first release. CREATE TABLE IF NOT
 # EXISTS does nothing to a table that already exists, so without this an upgrade
 # against a live database silently keeps the old shape and every query touching
@@ -220,6 +234,10 @@ ADDED_COLUMNS = {
         "matched_title": "TEXT DEFAULT ''",
         "matched_author": "TEXT DEFAULT ''",
         "score": "REAL DEFAULT 0",
+        # Default '' on purpose: every row that predates this column was learned
+        # by a resolver that could not tell an audiobook from an ebook, so the
+        # migration below drops them rather than trusting them.
+        "resolver": "TEXT NOT NULL DEFAULT ''",
     },
 }
 
@@ -266,6 +284,28 @@ def rebuild_profile_state(conn) -> bool:
     return True
 
 
+def retire_stale_title_ids(conn) -> int:
+    """Delete learned ids that an older resolver produced.
+
+    Reads already ignore them, so this is only housekeeping — but it is the
+    difference between a deploy that fixes the data and a deploy that waits
+    thirty days for it to expire. It runs at startup, so shipping the fix is
+    all anyone has to remember to do.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(title_map)").fetchall()}
+    if "resolver" not in cols:
+        return 0
+    cur = conn.execute("DELETE FROM title_map WHERE resolver <> ?", (RESOLVER,))
+    retired = cur.rowcount or 0
+    if retired:
+        # Availability was computed from those ids, so it inherits their
+        # doubt: a row saying the audiobook has four copies in was really
+        # reading the ebook's. not_owned is cached for a week, so waiting it
+        # out is not an option either. Cheap to drop, and it costs one run.
+        conn.execute("DELETE FROM lookup_cache")
+    return retired
+
+
 def init_db() -> list:
     with db() as conn:
         conn.executescript(SCHEMA)
@@ -273,6 +313,9 @@ def init_db() -> list:
         if rebuild_profile_state(conn):
             applied.append("profile_state.fmt")
         conn.executescript(POST_MIGRATE)
+        retired = retire_stale_title_ids(conn)
+        if retired:
+            applied.append(f"title_map: retired {retired} id(s) from an older resolver")
         return applied
 
 
@@ -714,7 +757,8 @@ def job_prune(max_age_seconds: int) -> int:
 def title_map_get(book_key: str, fmt: str, max_age: float) -> Optional[dict]:
     with db() as conn:
         row = conn.execute(
-            "SELECT * FROM title_map WHERE book_key=? AND fmt=?", (book_key, fmt)
+            "SELECT * FROM title_map WHERE book_key=? AND fmt=? AND resolver=?",
+            (book_key, fmt, RESOLVER),
         ).fetchone()
     if not row:
         return None
@@ -734,8 +778,9 @@ def title_map_get_many(book_keys: list, fmt: str, max_age: float) -> dict:
             batch = book_keys[start:start + chunk]
             ph = ",".join("?" * len(batch))
             rows = conn.execute(
-                f"SELECT * FROM title_map WHERE fmt=? AND resolved_at>? AND book_key IN ({ph})",
-                (fmt, cutoff, *batch),
+                f"SELECT * FROM title_map WHERE fmt=? AND resolved_at>? AND resolver=? "
+                f"AND book_key IN ({ph})",
+                (fmt, cutoff, RESOLVER, *batch),
             ).fetchall()
             for r in rows:
                 out[r["book_key"]] = dict(r)
@@ -745,12 +790,12 @@ def title_map_get_many(book_keys: list, fmt: str, max_age: float) -> dict:
 def title_map_put(book_key: str, fmt: str, title_id, matched_title="", matched_author="", score=0.0) -> None:
     with db() as conn:
         conn.execute(
-            "INSERT INTO title_map (book_key, fmt, title_id, matched_title, matched_author, score, resolved_at) "
-            "VALUES (?,?,?,?,?,?,?) "
+            "INSERT INTO title_map (book_key, fmt, title_id, matched_title, matched_author, "
+            "score, resolved_at, resolver) VALUES (?,?,?,?,?,?,?,?) "
             "ON CONFLICT(book_key, fmt) DO UPDATE SET title_id=excluded.title_id, "
             "matched_title=excluded.matched_title, matched_author=excluded.matched_author, "
-            "score=excluded.score, resolved_at=excluded.resolved_at",
-            (book_key, fmt, title_id, matched_title, matched_author, score, time.time()),
+            "score=excluded.score, resolved_at=excluded.resolved_at, resolver=excluded.resolver",
+            (book_key, fmt, title_id, matched_title, matched_author, score, time.time(), RESOLVER),
         )
 
 
