@@ -18,8 +18,8 @@ services:
       SHELFWATCHR_PUBLIC_URL: "http://homeserver.local:8080"
 
       # Politeness towards OverDrive. One global budget for the whole server.
-      SHELFWATCHR_RPM: "60"
-      SHELFWATCHR_CONCURRENCY: "3"
+      SHELFWATCHR_RPM: "300"
+      SHELFWATCHR_CONCURRENCY: "12"
 
       # Automatic re-checks (UTC hour).
       SHELFWATCHR_REFRESH: "1"

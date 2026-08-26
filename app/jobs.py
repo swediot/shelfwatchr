@@ -188,6 +188,10 @@ def _progress(job) -> dict:
         "cache_hits": cached,
         "requests": searches + bulk,
         "rate_per_minute": rate.get("rate_per_minute"),
+        # How many times OverDrive told us to slow down. The rate and
+        # concurrency defaults are set on the evidence that this stays at zero;
+        # if it stops staying at zero, that is the number that says so.
+        "throttled": rate.get("throttled"),
         "started_at": job["created_at"],
     }
 

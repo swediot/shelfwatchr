@@ -41,13 +41,26 @@ class Settings:
 
     # Politeness. One global budget shared by every request the server makes,
     # so ten people searching at once can't turn into ten times the traffic.
-    requests_per_minute: float = _float("SHELFWATCH_RPM", 120)
+    #
+    # These started deliberately timid, on the theory that an undocumented API
+    # would object. Measured against a live catalogue, the adaptive rate climbs
+    # to its ceiling inside the first minute of a real run and stays pinned
+    # there — it is never the thing holding a run back. So the starting rate is
+    # now where it used to end up, which skips a ramp that only ever went one
+    # way. If the API does start objecting, `throttled` in the job stats says
+    # so and the halving below is what responds.
+    requests_per_minute: float = _float("SHELFWATCH_RPM", 300)
     # The rate tunes itself between these bounds: up while the API is happy,
     # halved the moment it complains. Set adaptive off to pin it at RPM.
-    rpm_ceiling: float = _float("SHELFWATCH_RPM_MAX", 300)
+    rpm_ceiling: float = _float("SHELFWATCH_RPM_MAX", 900)
     rpm_floor: float = _float("SHELFWATCH_RPM_MIN", 30)
     adaptive_rate: bool = _bool("SHELFWATCH_ADAPTIVE_RATE", True)
-    max_concurrency: int = _int("SHELFWATCH_CONCURRENCY", 3)
+    # This, not the rate, was the real brake. At three in flight and ~0.8s per
+    # round trip, a run cannot exceed ~230 requests/minute no matter what RPM
+    # says — which is exactly where every run sat, well under its own ceiling.
+    # The rate limiter is the thing that should decide how fast we go; this
+    # only needs to be high enough to let it.
+    max_concurrency: int = _int("SHELFWATCH_CONCURRENCY", 12)
     http_timeout: float = _float("SHELFWATCH_TIMEOUT", 20)
     http_retries: int = _int("SHELFWATCH_RETRIES", 3)
     # Seconds for the first backoff after a 429/5xx that carries no Retry-After;

@@ -31,8 +31,8 @@ primary_region = "fra"          # Frankfurt: nearest to Zurich
   # limiter see real client addresses instead of one proxy IP for everyone.
   SHELFWATCHR_TRUST_PROXY = "1"
   # Politeness towards OverDrive. A public instance is traffic under your name.
-  SHELFWATCHR_RPM = "90"
-  SHELFWATCHR_CONCURRENCY = "3"
+  SHELFWATCHR_RPM = "300"
+  SHELFWATCHR_CONCURRENCY = "12"
   SHELFWATCHR_REFRESH = "1"
   SHELFWATCHR_REFRESH_HOUR = "4"
   # Closed beta: no accounts to make, no sign-in link anywhere in the interface.
