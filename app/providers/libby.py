@@ -21,21 +21,49 @@ from .base import ProviderError, RateLimiter
 
 THUNDER = "https://thunder.api.overdrive.com/v2"
 
-# Libby's own URL vocabulary for a format-scoped shelf. The id already picks the
-# edition — audiobook and ebook are separate records with separate ids — but a
-# link that lands in "everything" arrives in a context holding both editions of
-# the work, and Libby then opens whichever it treats as primary. Naming the
-# format in the path keeps an audiobook link on the audiobook.
-LIBBY_COLLECTION = {
-    "audiobook-overdrive": "format-audiobook",
-    "ebook-overdrive": "format-ebook",
+# The one shape Libby's own router builds for a title. Its client bundle makes
+# the link as `library/<key>/similar-<id>/page-1/<id>` — the "similar-<id>" leg
+# is a real list (this title's read-alikes) and the trailing id is the title
+# opened over it. Anything else in that slot is not a list Libby knows, and an
+# unknown list resolves to the library's home screen with no title open, which
+# is why every link used to land on the library page.
+#
+# The format needs no help here: audiobook and ebook are separate records with
+# separate ids, so the id alone picks the edition.
+def title_url(scope_key: str, title_id: str, fmt: str = "") -> str:
+    """The Libby deep link for one title at one library."""
+    return (f"https://libbyapp.com/library/{scope_key}"
+            f"/similar-{title_id}/page-1/{title_id}")
+# Which OverDrive `type.id` each of our format keys means. Needed because the
+# multi-library search endpoint accepts a format parameter and then ignores it —
+# it answers with audiobooks and ebooks mixed together no matter what is asked.
+# Scoring that mixed list picks whichever edition matches the title best, which
+# for most books is the ebook, and the ebook's copies were then reported under
+# the "Audiobook" heading. Every candidate is filtered by type before scoring.
+MEDIA_TYPE = {
+    "audiobook-overdrive": "audiobook",
+    "ebook-overdrive": "ebook",
 }
 
 
-def title_url(scope_key: str, title_id: str, fmt: str) -> str:
-    """The Libby deep link for one title, in one format, at one library."""
-    shelf = LIBBY_COLLECTION.get(fmt, "everything")
-    return f"https://libbyapp.com/library/{scope_key}/{shelf}/page-1/{title_id}"
+def _media_type(item: dict) -> str:
+    kind = item.get("type")
+    if isinstance(kind, dict):
+        return str(kind.get("id") or "")
+    return str(kind or item.get("mediaType") or "")
+
+
+def _is_format(item: dict, fmt: str) -> bool:
+    """True when the catalogue item is the edition `fmt` asked for.
+
+    An item that declines to say what it is passes: a missing field should not
+    silently drop a real match.
+    """
+    want = MEDIA_TYPE.get(fmt)
+    got = _media_type(item)
+    return not want or not got or got == want
+
+
 CLIENT_ID = "dewey"  # the client id Libby's own web app sends
 HEADERS = {
     "User-Agent": "shelfwatch/1.0 (personal library availability tool)",
@@ -177,6 +205,8 @@ class LibbyProvider:
 
         best, best_score = None, 0.0
         for item in _items(data):
+            if not _is_format(item, fmt):
+                continue
             score = score_candidate(
                 book,
                 item.get("title") or "",
@@ -241,13 +271,15 @@ class LibbyProvider:
         — availability only for scopes the response happens to carry.
         """
         params = [("query", book.search_query), ("format", fmt),
-                  ("maxItems", 24), ("x-client-id", CLIENT_ID)]
+                  ("maxItems", 48), ("x-client-id", CLIENT_ID)]
         # Repeated libraryKey params, not a comma-joined list.
         params += [("libraryKey", k) for k in scope_keys[:settings.max_libraries_per_search]]
 
         data = await self._request("GET", f"{THUNDER}/media/search/", params=params)
         best, best_score = None, 0.0
         for item in _items(data):
+            if not _is_format(item, fmt):
+                continue
             score = score_candidate(book, item.get("title") or "", item.get("subtitle") or "",
                                     _authors_of(item))
             if score > best_score:
@@ -333,11 +365,23 @@ class LibbyProvider:
 
 
 def _items(data) -> list:
+    """The catalogue items in a response, and only the ones worth reading.
+
+    The bulk availability endpoint answers positionally: ask it about 90 ids
+    and it returns 90 entries, with a bare `null` wherever that library doesn't
+    carry the title. Every caller here goes straight to `.get`, so one null
+    used to raise AttributeError out of `availability_bulk`, fail the whole
+    request for that library, and drop the entire chunk into the one-request-
+    per-book fallback — correct answers, at thirty times the cost, with only a
+    log line to say so. Dropping non-dict entries at the door is the same
+    answer: a null means "not owned here", which is precisely what an absent
+    id already means to the caller.
+    """
     if isinstance(data, dict):
-        return data.get("items") or []
-    if isinstance(data, list):
-        return data
-    return []
+        data = data.get("items") or []
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
 
 
 def _region_of(item: dict) -> str:

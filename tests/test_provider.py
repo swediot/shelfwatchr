@@ -32,7 +32,9 @@ import httpx  # noqa: E402
 from app.matching import Book  # noqa: E402
 from app.models import Scope  # noqa: E402
 from app.providers.base import ProviderError, RateLimiter  # noqa: E402
-from app.providers.libby import LibbyProvider, _availability_of, _authors_of, _items  # noqa: E402
+from app.providers.libby import (  # noqa: E402
+    LibbyProvider, _authors_of, _availability_of, _items, title_url,
+)
 
 failures = []
 
@@ -83,11 +85,17 @@ def test_availability_parsing():
     check(got["is_available"] is True, "and a truthy string still counts as available")
 
     check(_availability_of({})["owned"] == 0, "an empty payload is survivable")
-    check(_items(None) == [] and _items({"items": [1]}) == [1] and _items([2]) == [2],
+    check(_items(None) == [] and _items({"items": [{"a": 1}]}) == [{"a": 1}]
+          and _items([{"b": 2}]) == [{"b": 2}],
           "items() copes with dict, list and nothing at all")
 
     creators = {"creators": [{"name": "A Narrator", "role": "Narrator"},
                              {"name": "The Author", "role": "Author"}]}
+    # The bulk endpoint answers positionally, padding with nulls for titles the
+    # library doesn't carry. One of those used to take down the whole request.
+    check(_items({"items": [{"id": "1"}, None, {"id": "2"}]}) == [{"id": "1"}, {"id": "2"}],
+          "a null padding entry is dropped rather than crashing the batch")
+
     check(_authors_of(creators) == ["The Author"], "narrators aren't mistaken for authors")
     check(_authors_of({"firstCreatorName": "Solo"}) == ["Solo"],
           "falling back to firstCreatorName when there's no creator list")
@@ -217,6 +225,71 @@ def test_request_shapes():
     asyncio.run(p.aclose())
 
 
+def test_format_filter():
+    """The edition asked for is the edition reported.
+
+    The multi-library search endpoint takes a format parameter and ignores it:
+    it answers with audiobooks and ebooks mixed together whatever is asked. Left
+    unfiltered, scoring picked whichever edition matched the title best — for
+    most books the ebook — and the ebook's copies were then reported under the
+    "Audiobook" heading. Hence a book shown as available that wasn't.
+    """
+    print("\nAsking for an audiobook and getting one")
+
+    MIXED = {"items": [
+        {"id": "eb", "title": "Piranesi", "type": {"id": "ebook"},
+         "firstCreatorName": "Susanna Clarke",
+         "creators": [{"name": "Susanna Clarke", "role": "Author"}],
+         "isAvailable": True, "availableCopies": 4, "ownedCopies": 4},
+        {"id": "ab", "title": "Piranesi", "type": {"id": "audiobook"},
+         "firstCreatorName": "Susanna Clarke",
+         "creators": [{"name": "Susanna Clarke", "role": "Author"}],
+         "isAvailable": False, "ownedCopies": 1, "holdsCount": 12},
+    ]}
+
+    p = provider(lambda r: httpx.Response(200, json=MIXED))
+    found = asyncio.run(p.search_across(BOOK, ["westmount"], "audiobook-overdrive", 0.78))
+    check(found and found["id"] == "ab",
+          f"a mixed search result yields the audiobook, not the ebook ({found and found['id']})")
+    found = asyncio.run(p.search_across(BOOK, ["westmount"], "ebook-overdrive", 0.78))
+    check(found and found["id"] == "eb",
+          f"and the ebook when the ebook is what was asked for ({found and found['id']})")
+    asyncio.run(p.aclose())
+
+    # The same filter on the single-library path.
+    p = provider(lambda r: httpx.Response(200, json=MIXED))
+    av = asyncio.run(p.lookup(BOOK, SCOPE, "audiobook-overdrive", 0.78))
+    check(av.title_id == "ab", f"the per-library lookup filters too ({av.title_id})")
+    check(av.status == "holdable",
+          f"so a queued audiobook isn't reported available off the ebook's copies ({av.status})")
+    asyncio.run(p.aclose())
+
+    # An item that doesn't say what it is must not be dropped: some payloads
+    # carry no type at all, and a missing field is not a wrong format.
+    p = provider(lambda r: httpx.Response(200, json={"items": [
+        {"id": "untyped", "title": "Piranesi", "firstCreatorName": "Susanna Clarke",
+         "creators": [{"name": "Susanna Clarke", "role": "Author"}],
+         "isAvailable": True, "availableCopies": 1, "ownedCopies": 1}]}))
+    found = asyncio.run(p.search_across(BOOK, ["westmount"], "audiobook-overdrive", 0.78))
+    check(found and found["id"] == "untyped", "an item with no stated type still matches")
+    asyncio.run(p.aclose())
+
+
+def test_title_link():
+    """The link opens the book, not the library's front page.
+
+    `library/<key>/similar-<id>/page-1/<id>` is the shape Libby's own client
+    builds. The list segment has to be a list Libby knows; an invented one
+    ("format-audiobook") resolves to the library home with no title open.
+    """
+    print("\nThe shape of a title link")
+    url = title_url("westmount", "555", "audiobook-overdrive")
+    check(url == "https://libbyapp.com/library/westmount/similar-555/page-1/555",
+          f"the title id names both the list and the title opened over it ({url})")
+    check(title_url("westmount", "555", "ebook-overdrive") == url,
+          "and the id alone picks the edition, so format doesn't change the link")
+
+
 def test_lookup_end_to_end():
     print("\nOne lookup, start to finish")
 
@@ -292,7 +365,8 @@ def test_library_search():
 
 if __name__ == "__main__":
     for fn in [test_availability_parsing, test_retries_and_throttling,
-               test_request_shapes, test_lookup_end_to_end, test_library_search]:
+               test_request_shapes, test_format_filter, test_title_link,
+               test_lookup_end_to_end, test_library_search]:
         fn()
     print()
     if failures:

@@ -273,7 +273,7 @@ function queueDetail(av) {
  * Two candidate links, because nothing published settles which one reaches the
  * installed app:
  *
- *   library — https://libbyapp.com/library/{key}/everything/page-1/{id}
+ *   library — https://libbyapp.com/library/{key}/similar-{id}/page-1/{id}
  *             The web app, pointed at the library offering the best terms.
  *   share   — https://share.libbyapp.com/title/{id}
  *             What Libby's own "share a title" button produces.
