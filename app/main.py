@@ -311,7 +311,7 @@ async def import_storygraph(
 ):
     raw = await file.read()
     if len(raw) > 8 * 1024 * 1024:
-        raise HTTPException(413, "That CSV is over 8 MB — is it definitely a StoryGraph export?")
+        raise HTTPException(413, "That CSV is over 8 MB — is it definitely a reading-list export?")
     try:
         books, report = parse_reading_list(
             raw, [s for s in statuses.split(",") if s.strip()], exclude_owned=exclude_owned,

@@ -53,13 +53,29 @@ def check(condition, message):
 
 def test_csv_parsing():
     print("\nCSV parsing")
-    for name, expected_source in (("storygraph.csv", "storygraph"), ("goodreads.csv", "goodreads")):
+    for name, expected_source in (("storygraph.csv", "storygraph"),
+                                  ("goodreads.csv", "goodreads"),
+                                  ("fable.csv", "fable")):
         raw = (FIXTURES / name).read_bytes()
         books, report = parse_reading_list(raw)
         titles = [b.title for b in books]
         check(report["source"] == expected_source, f"{name} detected as {expected_source}")
         check(not any("Dune" == t for t in titles), f"{name}: read books excluded")
         check(any("Fifth Season" in t for t in titles), f"{name}: to-read books kept")
+
+    # Fable calls the shelves something else and dates rows with a timestamp,
+    # and it records nothing about ownership — so there is nothing to exclude.
+    raw = (FIXTURES / "fable.csv").read_bytes()
+    _, report = parse_reading_list(raw)
+    check(report["statuses_found"].get("read") == 1,
+          'Fable\'s "Finished" counts as read')
+    check(report["statuses_found"].get("currently-reading") == 1,
+          'Fable\'s "Reading" counts as currently-reading')
+    check(not report["has_owned"] and report["owned"] == 0,
+          "Fable records no ownership, so nothing is dropped as owned")
+    dune = next(b for b in parse_reading_list(raw, statuses=("read",))[0] if b.title == "Dune")
+    check(dune.added == "2019-06-01", f"Fable timestamps parse to a date (got {dune.added!r})")
+    check(dune.pages == 604, f"the page count wins over the current page (got {dune.pages})")
 
     raw = (FIXTURES / "goodreads.csv").read_bytes()
     books, _ = parse_reading_list(raw)

@@ -1,8 +1,8 @@
 # Shelfwatchr
 
-Upload your StoryGraph or Goodreads to-read export, pick your library cards, and
-get one report: what you can **borrow right now**, and what you can **place a
-hold** on and how long the wait is — checked across every card at once.
+Upload your StoryGraph, Goodreads, or Fable to-read export, pick your library
+cards, and get one report: what you can **borrow right now**, and what you can
+**place a hold** on and how long the wait is — checked across every card at once.
 
 Then let it watch the list for you. Once a week (or once a day) the server
 re-checks everything and emails you a digest of what moved: a book that became
@@ -139,8 +139,11 @@ wait", or "Available · 3 copies".
    Libby URL (`libbyapp.com/library/`**`queenslibrary`**). Remembered in your
    browser. Search answers from a local directory — see below.
 2. **Drop in your CSV.** StoryGraph → Manage Account → Manage Your Data → Export.
-   Goodreads → My Books → Import and Export → Export Library. Either works, the
-   whole export is fine, and you choose which shelf to check.
+   Goodreads → My Books → Import and Export → Export Library. Fable has no
+   export of its own, so use one of the browser extensions that read your
+   library out of it — either file those offer works, the Goodreads-shaped one
+   or Fable's own richer sheet. Any of the three services exports fine whole,
+   and you choose which shelf to check.
 3. **Read the report.** Available now and Waitlist — each entry linking straight
    to that book in Libby, in the format you're looking at.
 4. **Save it, and let it watch.** Saving gives you a link that works on any
@@ -173,8 +176,8 @@ worse than none.
 
 ### Updating the list later
 
-Export again from StoryGraph or Goodreads and drop the new file in while your
-saved list is open. The check button then says what it's about to do — *"Updates
+Export again from StoryGraph, Goodreads, or Fable and drop the new file in while
+your saved list is open. The check button then says what it's about to do — *"Updates
 'My audiobooks' to the 1,395 books on this shelf — 12 new, 3 gone — and checks
 them"* — so pressing it replaces the saved list and re-checks in one go. Books
 that left the list have their remembered history dropped too, so if one comes
@@ -476,7 +479,7 @@ app/
     mock.py       fixture + synthetic catalogues for tests and demos
   matching.py     title/author normalisation and scoring  ← tune here
   changes.py      what counts as a change, and the thresholds
-  csvimport.py    StoryGraph and Goodreads parsing
+  csvimport.py    StoryGraph, Goodreads, and Fable parsing
   store.py        SQLite: cache, library directory, lists, jobs, reports, accounts
   notify.py       ntfy / webhook / email digest, confirmation and reset mail
   auth.py         password hashing, tokens, rate limiting — stdlib only

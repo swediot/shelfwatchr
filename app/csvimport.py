@@ -1,9 +1,9 @@
 """Reading-list CSV -> books.
 
-Handles both StoryGraph and Goodreads exports, and tries not to be brittle about
-it: columns are found by fuzzy name rather than position, so a renamed or
-reordered export still imports. Both services happen to spell the shelf we want
-"to-read", which is the one convenient thing about this.
+Handles StoryGraph, Goodreads, and Fable exports, and tries not to be brittle
+about it: columns are found by fuzzy name rather than position, so a renamed or
+reordered export still imports. Each service spells the shelf we want its own
+way — "to-read", "want to read" — and normalise_status flattens them to one.
 """
 
 from __future__ import annotations
@@ -45,17 +45,23 @@ def split_authors(raw: str) -> list[str]:
     return [a.strip() for a in re.split(r"[;,]| and ", raw or "") if a.strip()]
 
 
-def parse_date(value: str) -> str:
-    """Both exports write dates their own way; normalise to ISO so they sort.
+# Fable dates come out as timestamps — 2026-01-12T09:41:03Z — and the time of
+# day is never interesting here.
+TIME_OF_DAY = re.compile(r"[T ]\d{2}:\d{2}(:\d{2})?.*$")
 
-    StoryGraph: 2026/01/12 · Goodreads: 2026/01/12 · some locales: 12/01/2026.
-    An unparseable date is dropped rather than guessed at — sorting by "added"
-    simply puts those last.
+
+def parse_date(value: str) -> str:
+    """Every export writes dates its own way; normalise to ISO so they sort.
+
+    StoryGraph and Goodreads: 2026/01/12 · Fable: 2026-01-12T09:41:03Z · some
+    locales: 12/01/2026. An unparseable date is dropped rather than guessed at
+    — sorting by "added" simply puts those last.
     """
-    v = (value or "").strip()
+    v = TIME_OF_DAY.sub("", (value or "").strip()).strip()
     if not v:
         return ""
-    for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d.%m.%Y"):
+    for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d.%m.%Y",
+                "%b %d, %Y", "%B %d, %Y"):
         try:
             return datetime.strptime(v, fmt).date().isoformat()
         except ValueError:
@@ -71,7 +77,11 @@ def parse_int(value: str):
 
 
 def parse_owned(value: str) -> bool:
-    """StoryGraph writes Yes/No; Goodreads writes a copy count."""
+    """StoryGraph writes Yes/No; Goodreads writes a copy count.
+
+    Fable records nothing about ownership, so a Fable import has no owned rows
+    to leave out and the count is the same either way.
+    """
     v = (value or "").strip().lower()
     if v in ("yes", "y", "true", "owned"):
         return True
@@ -79,8 +89,20 @@ def parse_owned(value: str) -> bool:
     return bool(n and n > 0)
 
 
+# Fable has no export button of its own; the browser extensions people use
+# offer two files. One is deliberately Goodreads-shaped and is detected as
+# Goodreads below — correctly, since that is what it is. The other is Fable's
+# own richer sheet, which these columns identify.
+FABLE_COLUMNS = {"reading status", "emoji reaction", "fable tags",
+                 "fable attributes", "source lists"}
+
+
 def detect_source(fields) -> str:
     lowered = {(f or "").strip().lower() for f in fields or []}
+    # Fable first: its detailed export carries a "moods" column too, so a
+    # StoryGraph check running ahead of this one would claim the file.
+    if lowered & FABLE_COLUMNS:
+        return "fable"
     if "exclusive shelf" in lowered or "book id" in lowered:
         return "goodreads"
     if "read status" in lowered or "moods" in lowered:
@@ -94,7 +116,11 @@ def normalise_status(value: str) -> str:
     return {
         "to read": "to-read",
         "want to read": "to-read",
+        "to be read": "to-read",
+        "tbr": "to-read",
         "currently reading": "currently-reading",
+        "reading": "currently-reading",
+        "finished": "read",          # Fable's word for the shelf everyone else calls read
         "did not finish": "did-not-finish",
         "dnf": "did-not-finish",
     }.get(s, s.replace(" ", "-"))
@@ -116,10 +142,14 @@ def parse_reading_list(
     c_title = find_col(fields, "title")
     c_auth = find_col(fields, "authors", "author")
     c_extra = find_col(fields, "additional authors", "contributors")
-    c_status = find_col(fields, "read status", "exclusive shelf", "status")
+    c_status = find_col(fields, "read status", "reading status", "exclusive shelf", "status")
     c_isbn = find_col(fields, "isbn13", "isbn/uid", "isbn")
-    c_added = find_col(fields, "date added", "added")
-    c_pages = find_col(fields, "number of pages", "pages")
+    # Fable dates the day you started a book rather than the day you shelved it.
+    # For a to-read list that column is empty anyway, and for the rest it is the
+    # closest thing to "added" the file has.
+    c_added = find_col(fields, "date added", "added to library", "added",
+                       "started date", "started")
+    c_pages = find_col(fields, "number of pages", "page count", "total pages", "pages")
     c_owned = find_col(fields, "owned?", "owned copies", "owned")
 
     report = {
@@ -143,7 +173,7 @@ def parse_reading_list(
     if not c_title:
         raise ValueError(
             "No Title column in that file. Columns found: " + ", ".join(fields[:12])
-            + ". Expected a StoryGraph or Goodreads CSV export."
+            + ". Expected a StoryGraph, Goodreads, or Fable CSV export."
         )
 
     wanted = {normalise_status(s) for s in statuses if s}
