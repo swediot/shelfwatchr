@@ -16,6 +16,7 @@ import time
 from contextlib import contextmanager
 from typing import Iterable, Optional
 
+from . import libdir
 from .auth import token_hash
 from .config import settings
 from .models import Availability, BookIn, Scope
@@ -38,6 +39,8 @@ CREATE TABLE IF NOT EXISTS library_dir (
   key       TEXT NOT NULL,
   name      TEXT NOT NULL,
   region    TEXT DEFAULT '',
+  kind      TEXT NOT NULL DEFAULT '',   -- public | college | company | school
+  places    TEXT NOT NULL DEFAULT '',   -- towns served, for the picker's search
   seen_at   REAL NOT NULL,
   PRIMARY KEY (provider, key)
 );
@@ -225,6 +228,10 @@ ADDED_COLUMNS = {
         "last_run_at": "REAL NOT NULL DEFAULT 0",
         "user_id": "INTEGER",
     },
+    "library_dir": {
+        "kind": "TEXT NOT NULL DEFAULT ''",
+        "places": "TEXT NOT NULL DEFAULT ''",
+    },
     "job": {
         "slug": "TEXT NOT NULL DEFAULT ''",
         "error": "TEXT NOT NULL DEFAULT ''",
@@ -316,11 +323,15 @@ def init_db() -> list:
         retired = retire_stale_title_ids(conn)
         if retired:
             applied.append(f"title_map: retired {retired} id(s) from an older resolver")
-        return applied
+    # Not part of `applied`: the bundle is reloaded on every startup, and the
+    # caller reports that as what it is rather than as a schema change.
+    load_bundled_libraries()
+    return applied
 
 
 def reset_connection() -> None:
     """Tests point db_path somewhere else between cases."""
+    directory_changed()
     conn = getattr(_local, "conn", None)
     if conn is not None:
         conn.close()
@@ -439,49 +450,91 @@ def cache_clear() -> int:
 
 
 def remember_libraries(scopes: Iterable[Scope]) -> None:
+    """Keep a library found live, so the next search answers without asking.
+
+    `kind` is not overwritten on conflict: a live hit has no idea whether it is
+    a public library or a company one, and the bundle does.
+    """
     now = time.time()
     with db() as conn:
         conn.executemany(
-            "INSERT INTO library_dir (provider, key, name, region, seen_at) VALUES (?,?,?,?,?) "
+            "INSERT INTO library_dir (provider, key, name, region, kind, seen_at) "
+            "VALUES (?,?,?,?,?,?) "
             "ON CONFLICT(provider, key) DO UPDATE SET name=excluded.name, "
             "region=excluded.region, seen_at=excluded.seen_at",
-            [(s.provider, s.key, s.name, s.region, now) for s in scopes],
+            [(s.provider, s.key, s.name, s.region, s.kind, now) for s in scopes],
         )
+    directory_changed()
 
 
-def search_known_libraries(query: str, limit: int = 10) -> list[Scope]:
-    """Libraries we've already seen. Instant, and it works offline.
+def load_bundled_libraries() -> int:
+    """Put the shipped directory in the table, at every startup.
 
-    Ranked, not alphabetical: once the directory is seeded the table holds
-    thousands of rows, and "brooklyn" has to put Brooklyn Public Library above
-    every other name that merely contains the word.
+    The bundle is the authority on what exists and what it is called, so this
+    overwrites: a library renamed upstream is renamed here on the next deploy.
+    Rows learned live that the bundle has never heard of are left alone — they
+    cost nothing, and one of them may be the only way somebody reaches a library
+    that joined Libby after the bundle was last built.
     """
-    term = query.strip().lower()
-    if not term:
-        return []
-    exact, prefix, contains = term, f"{term}%", f"%{term}%"
-    # "USA" matches a region, but it is also a substring of "azusasekkei"; a
-    # country name means the country, so that tier outranks loose text hits.
-    # The tail form catches the state-qualified spellings — "IN, USA".
-    region_tail = f"%, {term}"
+    rows = libdir.read_bundle()
+    if not rows:
+        return 0
+    now = time.time()
     with db() as conn:
-        rows = conn.execute(
-            "SELECT provider, key, name, region FROM library_dir WHERE "
-            # Region too: "Canada" and "Switzerland" appear in no library's name,
-            # so without this the only way to find one is to already know it.
-            "  lower(name) LIKE ? OR lower(key) LIKE ? OR lower(region) LIKE ? "
-            "ORDER BY CASE "
-            "  WHEN lower(key) = ? THEN 0 "          # the slug, pasted from a Libby URL
-            "  WHEN lower(name) = ? THEN 1 "
-            "  WHEN lower(region) = ? OR lower(region) LIKE ? THEN 2 "
-            "  WHEN lower(name) LIKE ? THEN 3 "      # name starts with it
-            "  WHEN lower(key) LIKE ? THEN 4 "
-            "  WHEN lower(name) LIKE ? THEN 5 "      # name contains it
-            "  ELSE 6 END, length(name), name LIMIT ?",
-            (contains, contains, contains,
-             exact, exact, exact, region_tail, prefix, prefix, contains, limit),
-        ).fetchall()
-    return [Scope(**dict(r)) for r in rows]
+        conn.executemany(
+            "INSERT INTO library_dir (provider, key, name, region, kind, places, seen_at) "
+            "VALUES ('libby',?,?,?,?,?,?) "
+            "ON CONFLICT(provider, key) DO UPDATE SET name=excluded.name, "
+            "region=excluded.region, kind=excluded.kind, places=excluded.places, "
+            "seen_at=excluded.seen_at",
+            [(key, name, region, kind, places, now)
+             for key, name, region, kind, places in rows],
+        )
+    directory_changed()
+    return len(rows)
+
+
+# The search index is built from the table and kept until the table changes.
+# Rebuilding it is ~20ms over 2,300 rows, and a keystroke must not pay that.
+_index: Optional[list] = None
+_index_lock = threading.Lock()
+
+
+def directory_changed() -> None:
+    global _index
+    with _index_lock:
+        _index = None
+
+
+def _directory() -> list:
+    global _index
+    with _index_lock:
+        if _index is None:
+            with db() as conn:
+                rows = conn.execute(
+                    "SELECT key, name, region, kind, places FROM library_dir "
+                    "WHERE provider = 'libby'").fetchall()
+            _index = libdir.build([tuple(r) for r in rows])
+        return _index
+
+
+def library_count() -> int:
+    return len(_directory())
+
+
+def search_known_libraries(query: str, limit: int = 25) -> list[Scope]:
+    """The picker's answer. Ranked by app/libdir.py, which explains the order."""
+    return [Scope(key=e.key, name=e.name, region=e.region, kind=e.kind)
+            for e in libdir.search(_directory(), query, limit)]
+
+
+def library_by_key(key: str) -> Optional[Scope]:
+    """One library, by its exact key — what a saved list stores."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT key, name, region, kind FROM library_dir "
+            "WHERE provider = 'libby' AND key = ?", (key,)).fetchone()
+    return Scope(**dict(row)) if row else None
 
 
 # ------------------------------------------------------------- profiles

@@ -135,9 +135,10 @@ wait", or "Available · 3 copies".
 
 ## Using it
 
-1. **Pick your libraries.** Search by name, country, or paste the slug from your
-   Libby URL (`libbyapp.com/library/`**`queenslibrary`**). Remembered in your
-   browser. Search answers from a local directory — see below.
+1. **Pick your libraries.** Search by name, town, country, initials ("nypl"), or
+   paste the slug from your Libby URL (`libbyapp.com/library/`**`queenslibrary`**).
+   Every library on Libby is there, searched locally — see below. Remembered in
+   your browser.
 2. **Drop in your CSV.** StoryGraph → Manage Account → Manage Your Data → Export.
    Goodreads → My Books → Import and Export → Export Library. Fable has no
    export of its own, so use one of the browser extensions that read your
@@ -151,28 +152,43 @@ wait", or "Available · 3 copies".
 
 ### The library directory
 
-OverDrive's library endpoint ignores its own `query` parameter — asking it for
-"brooklyn" returns the same first page as asking it for nothing — so searching
-by name only ever worked if you already knew the library's exact slug. The fix
-is to keep the directory locally and search it here:
+Every library live on Libby ships with the app, in `app/data/libraries.tsv` —
+about 2,200 of them, with what country they're in and which towns they serve.
+It is loaded into the database at startup, so the picker is complete on a fresh
+install, answers offline, and doesn't depend on what anyone has searched for
+before.
+
+It has to ship, because the upstream directory cannot be searched. OverDrive's
+library endpoint ignores its own `query` parameter — asking it for "brooklyn"
+returns the same first page as asking it for nothing — so a library nobody had
+already found by its exact slug was unreachable. The bundle plus the local
+search in `app/libdir.py` is the whole fix.
+
+Refresh it when the directory moves on — a library joins, leaves, or is
+renamed. A few times a year is plenty, and the result is committed:
 
 ```bash
-python tools/seed_libraries.py            # ~2,300 live libraries, a few minutes
-python tools/seed_libraries.py --enrich   # then fill in countries (slower)
-python tools/seed_libraries.py --all      # include Preview/Terminated entries
+python tools/seed_libraries.py             # rewrite app/data/libraries.tsv
+python tools/seed_libraries.py --dry-run   # report what changed, write nothing
 ```
 
-That walks the full 13,080-entry directory and keeps the ~17% marked `Live`;
-the rest are Preview, Terminated or Merged and lend nothing. Search then answers
-instantly, offline, and actually filters. Re-run it whenever you want a refresh
-— it upserts.
+That walks all 13,000 entries, keeps the ~17% that are `Live` and reachable
+from Libby (the rest are Preview, Terminated or Merged, and lend nothing), then
+asks each survivor for its own record and its branches.
 
-`--enrich` is a second pass for the country column. The API carries no location
-field at all, in either the list or the per-library record, so a library's
-country is inferred from the hostnames it gives for itself and from unmistakable
-place names. Anything ambiguous is left blank on purpose: "Ontario", "Victoria"
-and "Washington" all exist in more than one country, and a wrong country is
-worse than none.
+The branches are the interesting part. The API carries no location field
+anywhere, so a library's country is read off the hostnames it gives for itself —
+and a consortium like CLEVNET gives none, while its branches sit on `.oh.us`.
+That places about half the directory; anything ambiguous is left blank on
+purpose, since "Ontario", "Victoria" and "Washington" all exist in more than one
+country and a wrong country is worse than none. The branch *names* do the other
+half of the job: they are how "Andover" finds CLEVNET, which is the consortium
+that actually serves Andover and mentions no town in its name.
+
+Each entry also carries what kind of library it is — public, college, company,
+school — which the picker shows and ranks by. Half the directory is not a public
+library, and "company" next to a name is what stops somebody picking the
+staff-only one.
 
 ### Updating the list later
 
@@ -481,6 +497,9 @@ app/
   changes.py      what counts as a change, and the thresholds
   csvimport.py    StoryGraph, Goodreads, and Fable parsing
   store.py        SQLite: cache, library directory, lists, jobs, reports, accounts
+  libdir.py       the bundled library list, and the picker's search over it
+  data/
+    libraries.tsv  every library on Libby: key, name, region, kind, towns
   notify.py       ntfy / webhook / email digest, confirmation and reset mail
   auth.py         password hashing, tokens, rate limiting — stdlib only
   accounts.py     sign up / in / out, confirm, reset, and the account's list
@@ -493,12 +512,13 @@ web/              the frontend: no build step
   signin.js       ← standalone, so the sign-in page doesn't load the whole app
   styles.css
 tools/
-  seed_libraries.py   fills the local library directory from OverDrive
+  seed_libraries.py   rewrites app/data/libraries.tsv from OverDrive
 tests/
   test_app.py         end-to-end against the mock catalogue
   test_auth.py        accounts: hashing, sessions, enumeration, ownership
   test_gate.py        the beta gate: what it blocks, and the cookie
   test_provider.py    the OverDrive client, against a mock transport
+  picker_check.py     the library picker in a browser: keyboard, chips, labels
   ui_smoke.py         the report's wording and layout, in a browser
   reveal_check.py     hover and tap behaviour for the queue detail
   filter_check.py     filters and sorting, in a browser

@@ -138,10 +138,36 @@ def test_libraries():
     print("\nLibrary picker")
     r = client.get("/api/libraries", params={"q": "queens"})
     check(r.status_code == 200, "library search responds")
-    check(any(i["key"] == "queenslibrary" for i in r.json()["items"]), "finds Queens")
+    body = r.json()
+    check(body["source"] == "directory", "answered from the bundled directory, not the network")
+    check(body["total"] > 2000, f"which holds every library on Libby ({body.get('total')})")
+    check(body["items"][0]["key"] == "queenslibrary",
+          "Queens Public Library comes first for 'queens', ahead of Queensland")
 
-    r2 = client.get("/api/libraries", params={"q": "queens"})
-    check(r2.json()["source"] == "cache", "second search is served from the local directory")
+    def top(query, n=1):
+        items = client.get("/api/libraries", params={"q": query}).json()["items"]
+        return [i["key"] for i in items[:n]]
+
+    # The ranking, in the shapes people actually type. Each of these used to
+    # return either nothing at all or the wrong library first.
+    check(top("nypl") == ["nypl"], "initials find New York Public Library")
+    check(top("new york") == ["nypl"],
+          "and the public library outranks the university and the power authority")
+    check(top("brooklyn pub") == ["brooklyn"], "half-typed words still match")
+    check(top("cuyahoga") == ["ccpl"], "a county name nobody spells right first time")
+    check("clevnet" in top("andover", 5),
+          "a town finds the consortium that serves it, though its name says no town")
+    check(top("vancover") == ["vpl"], "a misspelling still lands on Vancouver")
+    check(top("queenslibrary") == ["queenslibrary"], "a pasted Libby slug is exact")
+
+    canada = client.get("/api/libraries", params={"q": "canada"}).json()["items"]
+    check(all(i["region"] == "Canada" for i in canada[:5]),
+          "a country name asks about the country")
+
+    kinds = {i["key"]: i["kind"] for i in
+             client.get("/api/libraries", params={"q": "new york"}).json()["items"]}
+    check(kinds.get("nypl") == "public" and kinds.get("nyu") == "college",
+          "each hit says what kind of card it takes")
 
 
 def test_import_and_lookup():

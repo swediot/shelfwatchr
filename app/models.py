@@ -19,6 +19,9 @@ class Scope(BaseModel):
     key: str
     name: str
     region: str = ""
+    # public | college | company | school. Only the picker uses it, to say
+    # which of the two libraries with the same name needs a student card.
+    kind: str = ""
 
 
 class BookIn(BaseModel):

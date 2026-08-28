@@ -9,7 +9,10 @@ __pycache__/
 # The SQLite database and its WAL sidecars. This is runtime state, not source:
 # it holds whoever's reading list, saved profiles, and any accounts on the
 # instance. The Dockerfile mounts /data as a volume for exactly this reason.
-data/
+#
+# Anchored, because app/data/ is the opposite of runtime state: the library
+# directory that ships with the app lives there and has to be committed.
+/data/
 *.db
 *.db-shm
 *.db-wal

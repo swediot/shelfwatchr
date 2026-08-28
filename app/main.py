@@ -35,8 +35,9 @@ async def lifespan(app: FastAPI):
     if migrated:
         log.info("database upgraded: added %s", ", ".join(migrated))
     log.info(
-        "shelfwatchr up — db=%s mock=%s rate=%s/min concurrency=%s",
-        settings.db_path, settings.mock, settings.requests_per_minute, settings.max_concurrency,
+        "shelfwatchr up — db=%s mock=%s rate=%s/min concurrency=%s libraries=%s",
+        settings.db_path, settings.mock, settings.requests_per_minute,
+        settings.max_concurrency, store.library_count(),
     )
     await jobs.resume_orphans()
     store.job_prune(settings.job_retention_hours * 3600)
@@ -117,22 +118,36 @@ def _guard(slug: str, request: Request) -> None:
 
 
 @app.get("/api/libraries")
-async def libraries(q: str = Query(..., min_length=2), refresh: bool = False):
+async def libraries(q: str = Query(..., min_length=1), limit: int = 25,
+                    refresh: bool = False):
     """Typeahead for the library picker.
 
-    Answers instantly from libraries we've seen before, and asks OverDrive only
-    when we have nothing good — the directory barely changes.
+    Answered from the directory that ships with the app — every library live on
+    Libby — which is why this is instant, works offline, and finds a library
+    nobody here has searched for before. OverDrive is asked only when the
+    directory has nothing, which in practice means a library that joined Libby
+    since the bundle was last built.
     """
-    known = store.search_known_libraries(q)
+    known = store.search_known_libraries(q, limit=max(1, min(limit, 100)))
+    total = store.library_count()
     if known and not refresh:
-        return {"items": [s.model_dump() for s in known], "source": "cache"}
+        return {"items": [s.model_dump() for s in known], "source": "directory",
+                "total": total}
+
+    # Nothing matched. Asking OverDrive is worth it only for something slug
+    # shaped: its list endpoint ignores `query` and would answer a name with
+    # twenty arbitrary libraries dressed up as matches, while an exact key it
+    # does answer — which is how a library that joined Libby since the bundle
+    # was built is still reachable.
+    if not refresh and " " in q.strip():
+        return {"items": [], "source": "directory", "total": total}
 
     provider = service.get_provider()
     try:
         found = await provider.search_scopes(q)
     except Exception as exc:  # noqa: BLE001
         if known:
-            return {"items": [s.model_dump() for s in known], "source": "cache",
+            return {"items": [s.model_dump() for s in known], "source": "directory",
                     "warning": f"live search failed: {exc}"}
         raise HTTPException(502, f"library search failed: {exc}")
 
@@ -146,12 +161,7 @@ async def libraries(q: str = Query(..., min_length=2), refresh: bool = False):
 
 def _scopes_from_keys(keys: list[str]) -> list[Scope]:
     """Turn keys back into named scopes, preferring names we already know."""
-    known = {}
-    for key in keys:
-        hits = store.search_known_libraries(key, limit=5)
-        for h in hits:
-            known[h.key] = h
-    return [known.get(k, Scope(key=k, name=k)) for k in keys]
+    return [store.library_by_key(k) or Scope(key=k, name=k) for k in keys]
 
 
 @app.post("/api/lookup")

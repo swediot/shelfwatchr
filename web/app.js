@@ -439,27 +439,72 @@ function addScope(scope) {
   $("lib-suggestions").replaceChildren();
 }
 
+/* The directory ships with the app and is searched in memory, so an answer is
+   a few milliseconds and never leaves the machine. The delay here is only to
+   avoid a request per keystroke, not to spare anyone the wait. */
 const searchLibraries = debounce(async (query) => {
   const box = $("lib-suggestions");
   if (query.trim().length < 2) { box.replaceChildren(); return; }
-  box.replaceChildren(el("button", { type: "button", disabled: true, text: "Searching…" }));
   try {
     const data = await api(`/api/libraries?q=${encodeURIComponent(query)}`);
-    if (!data.items.length) {
-      box.replaceChildren(el("button", { type: "button", disabled: true },
-        "Nothing matched. Try the slug from your Libby URL."));
-      return;
-    }
-    box.replaceChildren(...data.items.map((item) => {
-      const btn = el("button", { type: "button", role: "option" }, item.name,
-        el("span", { class: "sub", text: item.region ? `${item.key} · ${item.region}` : item.key }));
-      btn.addEventListener("click", () => addScope(item));
-      return btn;
-    }));
+    if (query !== $("lib-search").value) return;   // a later keystroke won already
+    showSuggestions(data);
   } catch (err) {
     box.replaceChildren(el("button", { type: "button", disabled: true, text: `Search failed: ${err.message}` }));
   }
-}, 320);
+}, 140);
+
+function showSuggestions(data) {
+  const box = $("lib-suggestions");
+  if (!data.items.length) {
+    box.replaceChildren(el("button", { type: "button", disabled: true },
+      "Nothing matched. Try the slug from your Libby URL."));
+    return;
+  }
+  const rows = data.items.map((item) => {
+    const picked = state.scopes.some((s) => s.key === item.key);
+    // Where it is, and whose card it takes. Half the directory is colleges and
+    // company libraries — worth listing, since somebody holds that card, but
+    // "company" is the word that stops a Denver reader picking Denver Seminary.
+    const kind = item.kind && item.kind !== "public" ? item.kind : "";
+    const sub = [item.key, item.region, kind].filter(Boolean).join(" · ");
+    const btn = el("button", { type: "button", role: "option", disabled: picked || null,
+                               "aria-selected": "false" },
+      item.name, el("span", { class: "sub", text: picked ? `${sub} · already picked` : sub }));
+    btn.addEventListener("click", () => addScope(item));
+    return btn;
+  });
+  box.replaceChildren(...rows);
+}
+
+/* Arrow keys move through the list, Enter takes the highlighted one, Escape
+   puts it away. Without this the only way to reach the second suggestion is
+   the mouse, and the list is where a search that returns nine near-identical
+   county libraries is actually resolved. */
+function moveHighlight(step) {
+  const options = [...$("lib-suggestions").querySelectorAll("button:not([disabled])")];
+  if (!options.length) return;
+  const at = options.indexOf(document.activeElement);
+  const next = at < 0 ? (step > 0 ? 0 : options.length - 1)
+                      : (at + step + options.length) % options.length;
+  options[next].focus();
+}
+
+function pickerKeys(event) {
+  const box = $("lib-suggestions");
+  if (event.key === "Escape") { box.replaceChildren(); $("lib-search").focus(); return; }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    moveHighlight(event.key === "ArrowDown" ? 1 : -1);
+    return;
+  }
+  // Enter on the box itself: take the first suggestion, which is the one the
+  // ranking is most sure about.
+  if (event.key === "Enter" && event.target.id === "lib-search") {
+    const first = box.querySelector("button:not([disabled])");
+    if (first) { event.preventDefault(); first.click(); }
+  }
+}
 
 /* ---------------------------------------------------------------- csv */
 
@@ -1771,6 +1816,9 @@ async function init() {
   renderChips();
 
   $("lib-search").addEventListener("input", (e) => searchLibraries(e.target.value));
+  $("lib-search").addEventListener("focus", (e) => searchLibraries(e.target.value));
+
+  document.querySelector(".picker").addEventListener("keydown", pickerKeys);
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".picker")) $("lib-suggestions").replaceChildren();
   });

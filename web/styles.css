@@ -113,6 +113,9 @@ button.link {
   background: none; padding: 10px 12px; font-weight: 500;
 }
 .suggestions button:hover, .suggestions button:focus { background: var(--none-bg); }
+/* A library already picked, and the "nothing matched" note. Both are there to
+   be read, not pressed. */
+.suggestions button[disabled] { color: var(--muted); cursor: default; }
 .suggestions .sub { display: block; color: var(--muted); font-size: 0.78rem; font-weight: 400; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
