@@ -37,13 +37,43 @@ SMTP_FROM = _env("SHELFWATCH_SMTP_FROM", SMTP_USER or "shelfwatchr@localhost")
 SMTP_TLS = str(_env("SHELFWATCH_SMTP_TLS", "starttls")).lower()  # starttls | ssl | none
 
 
+# A push notification is skimmed, not read. The dot says how soon the book
+# reaches you — green now, orange a shorter queue, red a longer one — so the
+# shape of the alert lands before any of the words do.
+GREEN, ORANGE, RED, GREY = "\U0001F7E2", "\U0001F7E0", "\U0001F534", "\U000026AA"
+DOT = {
+    "now_available": GREEN,
+    "newly_holdable": ORANGE,
+    "wait_dropped": ORANGE,
+    "wait_grew": RED,
+    "no_longer_available": RED,
+    "left_catalogue": RED,
+}
+NTFY_TAG = {GREEN: "green_circle", ORANGE: "orange_circle", RED: "red_circle"}
+
+
 def build_message(list_name: str, changes: list[Change], link: str = "") -> tuple[str, str]:
     """(title, body) — plain text, because every channel accepts that."""
     title = f"{list_name or 'Your list'}: {summarise(changes)}"
-    lines = [c.sentence() for c in changes]
+    # brief() leaves the library name out, and once it's gone the same book at
+    # two libraries is the same line twice — fromkeys keeps the first of each.
+    lines = list(dict.fromkeys(
+        f"{DOT.get(c.kind, GREY)} {c.brief()}" for c in changes))
     if link:
         lines += ["", link]
     return title, "\n".join(lines)
+
+
+def ntfy_tags(body: str) -> str:
+    """The circles used in the body, as ntfy emoji shortcodes.
+
+    ntfy draws tagged emoji beside the title, so the alert is colour-coded on the
+    lock screen before it's opened. Changes arrive sorted good news first, so the
+    tags come out green, orange, red in that order.
+    """
+    dots = dict.fromkeys(
+        NTFY_TAG[line[0]] for line in body.splitlines() if line[:1] in NTFY_TAG)
+    return ",".join([*dots, "books"])
 
 
 SECTIONS = [
@@ -185,7 +215,7 @@ async def _send_ntfy(target: str, title: str, body: str) -> dict:
             content=body.encode("utf-8"),
             headers={
                 "Title": title.encode("ascii", "replace").decode(),  # header must be latin-1 safe
-                "Tags": "books",
+                "Tags": ntfy_tags(body),
                 "Priority": "default",
             },
         )

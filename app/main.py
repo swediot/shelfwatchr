@@ -449,7 +449,15 @@ async def profile_test_notify(slug: str, request: Request):
     result = await notify.send(
         prof["notify_type"], prof["notify_target"],
         f"{prof['name'] or 'Shelfwatch'}: test alert",
-        "If you're reading this, alerts work. Real ones list what changed.",
+        # Shaped like a real alert, dots and all, so the test doubles as the
+        # legend for what the colours mean.
+        "\n".join([
+            "If you're reading this, alerts work. Real ones look like this:",
+            "",
+            f"{notify.GREEN} A book you're waiting on — available now",
+            f"{notify.ORANGE} Another one — wait down from 12 weeks to 5 weeks",
+            f"{notify.RED} A third — wait up from 3 weeks to 9 weeks",
+        ]),
     )
     return result
 

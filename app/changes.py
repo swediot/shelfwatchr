@@ -68,6 +68,28 @@ class Change:
             return f"{who} — {self.library} no longer lists it"
         return f"{who} — changed at {self.library}"
 
+    def brief(self) -> str:
+        """The same news without the library name.
+
+        Push notifications are read at a glance on a lock screen, and " at
+        Toronto Public Library" is the least surprising part of the line. The
+        full report still says where.
+        """
+        if self.kind == "now_available":
+            return f"{self.title} — available now"
+        if self.kind == "newly_holdable":
+            wait = f", ~{self.wait_after} day wait" if isinstance(self.wait_after, int) else ""
+            return f"{self.title} — holdable now{wait}"
+        if self.kind == "wait_dropped":
+            return f"{self.title} — wait down from {_days(self.wait_before)} to {_days(self.wait_after)}"
+        if self.kind == "wait_grew":
+            return f"{self.title} — wait up from {_days(self.wait_before)} to {_days(self.wait_after)}"
+        if self.kind == "no_longer_available":
+            return f"{self.title} — no longer on the shelf"
+        if self.kind == "left_catalogue":
+            return f"{self.title} — no longer in the catalogue"
+        return f"{self.title} — changed"
+
     def dict(self) -> dict:
         d = asdict(self)
         d["sentence"] = self.sentence()
