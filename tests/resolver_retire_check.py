@@ -7,7 +7,7 @@ its own, so a deploy has to retire those rows. This builds a database in the
 old shape — no `resolver` column at all — and checks that starting up against
 it does.
 
-Run: python tests/test_resolver_retire.py
+Run: python tests/resolver_retire_check.py
 """
 
 import os

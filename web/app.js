@@ -808,6 +808,7 @@ async function followJob(jobId, after = 0, total = 0) {
     state.running = false;
     finishProgress();
     $("save-panel").hidden = state.results.length === 0;
+    $("watch-panel").hidden = state.results.length === 0 && !state.slug;
     renderResults(true);
   }
 }
@@ -1596,61 +1597,50 @@ function downloadReport() {
 /* -------------------------------------------------------------- watch */
 
 function renderWatchPanel(prof) {
-  $("watch-panel").hidden = !state.slug;
-  if (!state.slug) return;
-  $("watch-enabled").checked = !!prof?.watch_enabled;
+  // Visible alongside "Keep this list": watching an unsaved list saves it
+  // first, so there's no reason to hide the offer until then.
+  $("watch-panel").hidden = !state.slug && state.results.length === 0;
+  const fmts = prof?.watch_formats?.length ? prof.watch_formats : prof?.formats || [];
+  $("watch-what").value = new Set(fmts).size > 1 || !fmts.length ? "both" : fmts[0];
   $("watch-frequency").value = prof?.watch_frequency || "weekly";
-  const type = prof?.notify_type || "none";
-  const menu = $("notify-type");
-  // Webhook and email are no longer offered, but a list configured for one
-  // before they were withdrawn still is. Assigning a value the menu doesn't
-  // have silently selects the first option instead — so the next Save would
-  // quietly switch that list to "nothing", which is not a thing to do to
-  // someone's notifications. Put the option back for that list only.
-  if (type !== "none" && !menu.querySelector(`option[value="${CSS.escape(type)}"]`)) {
-    menu.append(el("option", { value: type },
-      `${type === "email" ? "Email digest" : "Webhook"} (set up earlier)`));
-  }
-  menu.value = type;
+  // ntfy is the only channel offered, but a list configured for webhook or
+  // email before those left the menu keeps its channel — saveWatch sends it
+  // back unchanged rather than quietly switching someone's notifications.
+  state.notifyType = prof?.notify_type || "none";
   $("notify-target").value = prof?.notify_target || "";
-  updateNotifyHint();
-}
-
-// Webhook and email are gone from the menu. The server still implements both
-// and an existing list configured for either keeps working — this only stops
-// offering them, since email needs SMTP credentials this instance doesn't
-// have and a webhook needs somewhere to point it.
-const NOTIFY_HINT = {
-  none: "Changes still show at the top of the report when you open it — nothing gets sent.",
-  ntfy: "A topic name of your choosing. Install the ntfy app, subscribe to the same topic, and alerts arrive as push notifications. Pick something nobody would guess.",
-  webhook: "Set up before webhooks were taken off the menu. It still works; picking anything else here is one way.",
-  email: "Set up before email was taken off the menu. It still works; picking anything else here is one way.",
-};
-
-function updateNotifyHint() {
-  const type = $("notify-type").value;
-  $("notify-hint").textContent = NOTIFY_HINT[type] || "";
-  $("notify-target").hidden = type === "none";
-  $("notify-target-label").hidden = type === "none";
-  $("btn-test-notify").hidden = type === "none";
-  $("notify-target").placeholder = { ntfy: "shelfwatchr-a7f3k2", none: "" }[type] || "";
 }
 
 async function saveWatch() {
   try {
+    // Watching needs a saved list to hang off. If this one isn't saved yet,
+    // save it now — same as pressing "Save & get link" first.
+    if (!state.slug) {
+      await saveProfile();
+      if (!state.slug) return;   // that save failed, and said so itself
+    }
+    const what = $("watch-what").value;
+    const formats = what === "both" ? [...CHECK_FORMATS] : [what];
+    const target = $("notify-target").value.trim();
+    // A legacy webhook/email channel is kept as-is; otherwise the topic field
+    // decides — filled in means ntfy, blank means the report alone carries it.
+    const legacy = state.notifyType === "webhook" || state.notifyType === "email";
+    const type = legacy ? state.notifyType : target ? "ntfy" : "none";
     await api(`/api/profile/${state.slug}/watch`, jsonPost({
-      enabled: $("watch-enabled").checked,
+      enabled: true,
       frequency: $("watch-frequency").value,
-      notify_type: $("notify-type").value,
-      notify_target: $("notify-target").value,
+      formats,
+      notify_type: type,
+      notify_target: target,
     }));
+    state.notifyType = type;
     const freq = $("watch-frequency").value === "weekly" ? "once a week" : "every day";
-    const how = { none: "", ntfy: ", and pushes you an alert",
+    const how = { none: " — changes show here, nothing gets sent",
+                  ntfy: ", and pushes you an alert",
                   email: ", and emails you a digest",
-                  webhook: ", and posts to your webhook" }[$("notify-type").value] || "";
-    $("watch-result").textContent = $("watch-enabled").checked
-      ? `Saved. This list gets re-checked ${freq}${how}.`
-      : "Saved. Automatic checks are off.";
+                  webhook: ", and posts to your webhook" }[type] || "";
+    const subject = { both: "Audiobooks and ebooks", "audiobook-overdrive": "Audiobooks",
+                      "ebook-overdrive": "Ebooks" }[what];
+    $("watch-result").textContent = `Saved. ${subject} get re-checked ${freq}${how}.`;
   } catch (err) {
     $("watch-result").textContent = `Could not save: ${err.message}`;
   }
@@ -1794,6 +1784,7 @@ async function rejoinJob(jobId) {
     // header dates the report to the epoch.
     state.generatedAt = job.finished_at || job.started_at || null;
     $("save-panel").hidden = state.results.length === 0;
+    $("watch-panel").hidden = state.results.length === 0 && !state.slug;
     renderResults(true);
 
     if (job.state === "running") {
@@ -1877,7 +1868,6 @@ async function init() {
   $("btn-save").addEventListener("click", saveProfile);
   $("btn-save-watch").addEventListener("click", saveWatch);
   $("btn-test-notify").addEventListener("click", testNotify);
-  $("notify-type").addEventListener("change", updateNotifyHint);
 
   await loadAccount();
   showAuthOutcome();

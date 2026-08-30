@@ -51,14 +51,35 @@ DOT = {
 }
 NTFY_TAG = {GREEN: "green_circle", ORANGE: "orange_circle", RED: "red_circle"}
 
+# When a list watches both formats, the same title can move as an audiobook,
+# an ebook, or both — the emoji says which without spending any words on it.
+HEADPHONES, OPEN_BOOK = "\U0001F3A7", "\U0001F4D6"
 
-def build_message(list_name: str, changes: list[Change], link: str = "") -> tuple[str, str]:
-    """(title, body) — plain text, because every channel accepts that."""
+
+def format_emoji(fmt: str) -> str:
+    if (fmt or "").startswith("audiobook"):
+        return HEADPHONES
+    if (fmt or "").startswith("ebook") or (fmt or "").startswith("magazine"):
+        return OPEN_BOOK
+    return ""
+
+
+def build_message(list_name: str, changes: list[Change], link: str = "",
+                  show_format: bool = False) -> tuple[str, str]:
+    """(title, body) — plain text, because every channel accepts that.
+
+    show_format prefixes each line with 🎧/📖. Only worth it when the list
+    watches both formats; with one format the emoji would say nothing.
+    """
     title = f"{list_name or 'Your list'}: {summarise(changes)}"
     # brief() leaves the library name out, and once it's gone the same book at
     # two libraries is the same line twice — fromkeys keeps the first of each.
-    lines = list(dict.fromkeys(
-        f"{DOT.get(c.kind, GREY)} {c.brief()}" for c in changes))
+    # (With formats shown, the same book in two formats stays two lines.)
+    def line(c: Change) -> str:
+        badge = f"{format_emoji(c.fmt)} " if show_format and format_emoji(c.fmt) else ""
+        return f"{DOT.get(c.kind, GREY)} {badge}{c.brief()}"
+
+    lines = list(dict.fromkeys(line(c) for c in changes))
     if link:
         lines += ["", link]
     return title, "\n".join(lines)

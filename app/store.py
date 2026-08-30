@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS profile (
   updated_at  REAL NOT NULL,
   watch_enabled   INTEGER NOT NULL DEFAULT 0,
   watch_frequency TEXT    NOT NULL DEFAULT 'daily',   -- daily | weekly
+  watch_formats   TEXT    NOT NULL DEFAULT '[]',      -- what the nightly run checks; [] = same as formats
   notify_type     TEXT    NOT NULL DEFAULT 'none',    -- none | ntfy | webhook | email
   notify_target   TEXT    NOT NULL DEFAULT '',
   last_run_at     REAL    NOT NULL DEFAULT 0,
@@ -223,6 +224,7 @@ ADDED_COLUMNS = {
     "profile": {
         "watch_enabled": "INTEGER NOT NULL DEFAULT 0",
         "watch_frequency": "TEXT NOT NULL DEFAULT 'daily'",
+        "watch_formats": "TEXT NOT NULL DEFAULT '[]'",
         "notify_type": "TEXT NOT NULL DEFAULT 'none'",
         "notify_target": "TEXT NOT NULL DEFAULT ''",
         "last_run_at": "REAL NOT NULL DEFAULT 0",
@@ -547,6 +549,7 @@ def new_slug() -> str:
 
 def profile_save(slug: Optional[str], *, name: str, scopes, formats, books,
                  watch_enabled: Optional[bool] = None, watch_frequency: Optional[str] = None,
+                 watch_formats: Optional[list] = None,
                  notify_type: Optional[str] = None, notify_target: Optional[str] = None,
                  user_id: Optional[int] = None) -> str:
     """Create or update. Watch settings are only touched when explicitly passed,
@@ -569,6 +572,7 @@ def profile_save(slug: Optional[str], *, name: str, scopes, formats, books,
         for column, value in (
             ("watch_enabled", None if watch_enabled is None else int(watch_enabled)),
             ("watch_frequency", watch_frequency),
+            ("watch_formats", None if watch_formats is None else json.dumps(list(watch_formats))),
             ("notify_type", notify_type),
             ("notify_target", notify_target),
         ):
@@ -642,6 +646,7 @@ def profile_get(slug: str) -> Optional[dict]:
         "updated_at": row["updated_at"],
         "watch_enabled": bool(row["watch_enabled"]),
         "watch_frequency": row["watch_frequency"],
+        "watch_formats": json.loads(row["watch_formats"] or "[]"),
         "notify_type": row["notify_type"],
         "notify_target": row["notify_target"],
         "last_run_at": row["last_run_at"],

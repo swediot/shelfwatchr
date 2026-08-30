@@ -42,6 +42,7 @@ class Change:
     author: str
     library: str
     scope_key: str
+    fmt: str = ""
     before: str = ""
     after: str = ""
     wait_before: Optional[int] = None
@@ -125,7 +126,8 @@ def compare(previous: dict, book_title: str, book_author: str, av) -> Optional[C
 
     base = dict(
         title=book_title, author=book_author, library=av.scope_name,
-        scope_key=av.scope_key, before=was, after=now,
+        scope_key=av.scope_key, fmt=getattr(av, "fmt", "") or "",
+        before=was, after=now,
         wait_before=old_wait, wait_after=new_wait,
     )
 

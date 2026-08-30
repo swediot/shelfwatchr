@@ -123,5 +123,8 @@ class ProfileIn(BaseModel):
 class WatchIn(BaseModel):
     enabled: bool = True
     frequency: Literal["daily", "weekly"] = "daily"
+    # What the automatic check looks at. Empty means whatever the list itself
+    # was checked with — the behaviour before this field existed.
+    formats: list[Literal["audiobook-overdrive", "ebook-overdrive"]] = []
     notify_type: Literal["none", "ntfy", "webhook", "email"] = "none"
     notify_target: str = ""

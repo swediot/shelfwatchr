@@ -206,14 +206,19 @@
 
   <div class="panel" id="watch-panel" hidden>
     <h2>Check it automatically</h2>
-    <p class="hint">The server re-checks this list and tells you what moved. Small
-      day-to-day wobbles are ignored.</p>
+    <p class="hint">The server re-checks this list and tells you what moved, as a
+      push notification on your phone via the free <a href="https://ntfy.sh">ntfy</a>
+      app. Small day-to-day wobbles are ignored.</p>
 
     <div class="row">
-      <label class="switch">
-        <input type="checkbox" id="watch-enabled">
-        <span>Check automatically</span>
-      </label>
+      <div>
+        <label for="watch-what">Type</label>
+        <select id="watch-what">
+          <option value="audiobook-overdrive">Audiobooks &#127911;</option>
+          <option value="ebook-overdrive">Ebooks &#128214;</option>
+          <option value="both" selected>Both</option>
+        </select>
+      </div>
       <div>
         <label for="watch-frequency">How often</label>
         <select id="watch-frequency">
@@ -221,24 +226,20 @@
           <option value="daily">Every day</option>
         </select>
       </div>
-      <div>
-        <label for="notify-type">Tell me by</label>
-        <select id="notify-type">
-          <option value="none">Nothing &mdash; just show it here</option>
-          <option value="ntfy">Phone push (ntfy)</option>
-        </select>
-      </div>
     </div>
 
     <div class="row" style="margin-top:10px">
       <div class="grow">
-        <label for="notify-target" id="notify-target-label">Where</label>
-        <input type="text" id="notify-target" placeholder="">
+        <label for="notify-target" id="notify-target-label">ntfy topic</label>
+        <input type="text" id="notify-target" placeholder="shelfwatchr-a7f3k2">
       </div>
       <button id="btn-save-watch" class="primary">Save</button>
       <button id="btn-test-notify">Send a test</button>
     </div>
-    <p class="hint" id="notify-hint"></p>
+    <p class="hint" id="notify-hint">A topic name of your choosing. Install the ntfy
+      app, subscribe to the same topic, and alerts arrive as push notifications.
+      Pick something nobody would guess. Leave it blank and nothing gets sent —
+      changes still show at the top of the report when you open it.</p>
     <p class="empty-note" id="watch-result" role="status" aria-live="polite"></p>
   </div>
 

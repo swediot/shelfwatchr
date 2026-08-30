@@ -99,6 +99,10 @@ button.link {
    sit 2px apart, which is just visible enough to look like a mistake. */
 .shelf-line #shelf-select,
 .shelf-line #btn-check { height: 46px; min-height: 46px; padding-top: 0; padding-bottom: 0; }
+/* Same story in the watch panel: the topic input and the two buttons beside it. */
+#notify-target,
+#btn-save-watch,
+#btn-test-notify { height: 44px; min-height: 44px; padding-top: 0; padding-bottom: 0; }
 
 /* library picker */
 .picker { position: relative; }

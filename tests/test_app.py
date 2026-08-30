@@ -51,6 +51,25 @@ def check(condition, message):
 # ---------------------------------------------------------------- parsing
 
 
+def test_notify_format_emoji():
+    from app import notify
+    from app.changes import Change
+
+    changes = [
+        Change(kind="now_available", title="Aud", author="a", library="L",
+               scope_key="l", fmt="audiobook-overdrive"),
+        Change(kind="now_available", title="Ebk", author="b", library="L",
+               scope_key="l", fmt="ebook-overdrive"),
+    ]
+    _, body = notify.build_message("List", changes, show_format=True)
+    check(f"{notify.HEADPHONES} Aud" in body, "audiobook line carries the headphones emoji")
+    check(f"{notify.OPEN_BOOK} Ebk" in body, "ebook line carries the open-book emoji")
+
+    _, body = notify.build_message("List", changes)
+    check(notify.HEADPHONES not in body and notify.OPEN_BOOK not in body,
+          "single-format lists keep the plain lines")
+
+
 def test_csv_parsing():
     print("\nCSV parsing")
     for name, expected_source in (("storygraph.csv", "storygraph"),
@@ -371,12 +390,20 @@ def test_profile_watch_and_run():
 
     # Watch settings
     r = client.post(f"/api/profile/{slug}/watch", json={
-        "enabled": True, "frequency": "weekly", "notify_type": "ntfy", "notify_target": "test-topic",
+        "enabled": True, "frequency": "weekly", "formats": ["ebook-overdrive"],
+        "notify_type": "ntfy", "notify_target": "test-topic",
     })
     check(r.status_code == 200, "watch settings saved")
 
     prof = store.profile_get(slug)
     check(prof["watch_enabled"] and prof["watch_frequency"] == "weekly", "settings persisted")
+    check(prof["watch_formats"] == ["ebook-overdrive"], "watch formats persisted")
+
+    r = client.post(f"/api/profile/{slug}/watch", json={
+        "enabled": True, "frequency": "weekly", "formats": ["betamax"],
+        "notify_type": "ntfy", "notify_target": "test-topic",
+    })
+    check(r.status_code == 422, "an unknown watch format is refused")
 
     check(store.profiles_due(now=prof["last_run_at"] + 60) == [], "weekly list not due an hour later")
     due = store.profiles_due(now=prof["last_run_at"] + 8 * 86400)

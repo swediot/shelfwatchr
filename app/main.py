@@ -361,6 +361,7 @@ async def profile_read(slug: str):
         "known_states": len(state),
         "watch_enabled": prof["watch_enabled"],
         "watch_frequency": prof["watch_frequency"],
+        "watch_formats": prof["watch_formats"],
         "notify_type": prof["notify_type"],
         "notify_target": prof["notify_target"],
         "last_run_at": prof["last_run_at"],
@@ -433,9 +434,11 @@ async def profile_watch(slug: str, body: WatchIn, request: Request):
     store.profile_save(
         slug, name=prof["name"], scopes=prof["scopes"], formats=prof["formats"],
         books=prof["books"], watch_enabled=body.enabled, watch_frequency=body.frequency,
+        watch_formats=body.formats,
         notify_type=body.notify_type, notify_target=body.notify_target.strip(),
     )
-    return {"ok": True, "enabled": body.enabled, "frequency": body.frequency}
+    return {"ok": True, "enabled": body.enabled, "frequency": body.frequency,
+            "formats": body.formats}
 
 
 @app.post("/api/profile/{slug}/run")
@@ -464,9 +467,9 @@ async def profile_test_notify(slug: str, request: Request):
         "\n".join([
             "If you're reading this, alerts work. Real ones look like this:",
             "",
-            f"{notify.GREEN} A book you're waiting on — available now",
-            f"{notify.ORANGE} Another one — wait down from 12 weeks to 5 weeks",
-            f"{notify.RED} A third — wait up from 3 weeks to 9 weeks",
+            f"{notify.GREEN} {notify.HEADPHONES} A book you're waiting on — available now",
+            f"{notify.ORANGE} {notify.OPEN_BOOK} Another one — wait down from 12 weeks to 5 weeks",
+            f"{notify.RED} {notify.HEADPHONES} A third — wait up from 3 weeks to 9 weeks",
         ]),
     )
     return result
@@ -522,8 +525,11 @@ async def run_profile(slug: str, *, notify_on_changes: bool = True, base_url: st
     previous = store.profile_state_get(slug)
     first_run = not previous
 
+    # The watch can narrow what gets re-checked; unset, it checks what the
+    # list itself was checked with.
+    formats = prof.get("watch_formats") or prof["formats"]
     results = await service.lookup_all(
-        prof["books"], prof["scopes"], prof["formats"], settings.match_threshold, refresh=True
+        prof["books"], prof["scopes"], formats, settings.match_threshold, refresh=True
     )
 
     found: list[changes_mod.Change] = []
@@ -564,7 +570,11 @@ async def run_profile(slug: str, *, notify_on_changes: bool = True, base_url: st
             )
             sent = await notify.send("email", prof["notify_target"], subject, text, html)
         else:
-            title, body = notify.build_message(list_name, found, link)
+            title, body = notify.build_message(
+                list_name, found, link,
+                # With both formats watched, say which one each line is about.
+                show_format=len(set(formats)) > 1,
+            )
             sent = await notify.send(prof["notify_type"], prof["notify_target"], title, body)
 
     log.info("ran %s: %d books, %d changes%s", slug, len(results), len(found),
