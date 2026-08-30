@@ -145,6 +145,12 @@ def run(page):
     check(solo.locator(".fmt-tag").count() == 0,
           "and carries no marker, since every row there is that one format")
 
+    print("\nThe watch box waits for nobody")
+    check(page.locator("#watch-panel").is_visible(),
+          "'Check it automatically' shows once results exist, before any save")
+    check(page.locator("#save-panel").is_visible(),
+          "right below 'Keep this list', which is also up")
+
     print("\nSaving the list")
     page.locator('#format-toggle button[data-format="both"]').click()
     page.fill("#profile-name", "Panels")
@@ -160,11 +166,13 @@ def run(page):
           "the same link it shows on screen")
 
     print("\nHow you get told")
-    opts = page.locator("#notify-type option").all_inner_texts()
-    check(not any("webhook" in o.lower() for o in opts), f"no webhook option: {opts}")
-    check(not any("email" in o.lower() or "smtp" in o.lower() for o in opts),
-          f"no email option: {opts}")
-    check(len(opts) == 2, f"just the two that work here: {opts}")
+    check(page.locator("#notify-type").count() == 0,
+          "no channel menu at all — ntfy is the channel, the hint says so")
+    hint = page.locator("#watch-panel .hint").first.inner_text()
+    check("ntfy" in hint, f"the box text names ntfy: {hint[:60]!r}…")
+    what = page.locator("#watch-what option").all_inner_texts()
+    check(len(what) == 3 and not any("don" in o.lower() for o in what),
+          f"the Type menu offers the three real choices: {what}")
 
     print(f"\nJS errors: {errors or 'none'}")
     if errors:
