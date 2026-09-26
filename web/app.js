@@ -520,8 +520,14 @@ const SHELF_LABEL = {
 // so the choice only ever had one sensible answer and made the menu twice as
 // long to say so. Exports that don't record ownership are unaffected: there is
 // nothing to exclude, and the count is the same either way.
+// Each upload (or shelf switch, which re-imports) takes a ticket. Only the
+// newest one may write to the page: a slow response for an older file must not
+// land after a newer one and put its counts back in the shelf menu.
+let uploadSeq = 0;
+
 async function uploadCsv(file, choice = "to-read") {
   if (!file) return;
+  const seq = ++uploadSeq;
   state.file = file;
   const body = new FormData();
   body.append("file", file);
@@ -533,6 +539,7 @@ async function uploadCsv(file, choice = "to-read") {
     const data = await api(
       `/api/import?statuses=${encodeURIComponent(choice)}&exclude_owned=true`,
       { method: "POST", body });
+    if (seq !== uploadSeq) return;           // superseded by a newer upload
     if (state.slug && state.books.length) {
       state.pendingUpload = data.books;      // a saved list is open: offer to update it
     } else {
@@ -541,6 +548,7 @@ async function uploadCsv(file, choice = "to-read") {
     }
     renderCsvReport(data.report, choice);
   } catch (err) {
+    if (seq !== uploadSeq) return;
     $("shelf-row").hidden = true;
     $("csv-report").replaceChildren(el("div", { class: "notice err", text: err.message }));
   }
@@ -1825,7 +1833,15 @@ async function init() {
     e.preventDefault(); dz.classList.remove("over");
     uploadCsv(e.dataTransfer.files[0]);
   });
-  $("csv-input").addEventListener("change", (e) => uploadCsv(e.target.files[0]));
+  $("csv-input").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    // Clear the input so choosing a file with the same name again still fires
+    // "change". Exports keep their filename between downloads, and without
+    // this the browser treats a fresh export as "nothing changed": no upload,
+    // and the shelf menu keeps the previous file's counts.
+    e.target.value = "";
+    uploadCsv(file);
+  });
   $("shelf-select").addEventListener("change", (e) => uploadCsv(state.file, e.target.value));
   $("btn-check").addEventListener("click", () => {
     // With a saved list open and a new export waiting, checking means saving
@@ -1859,6 +1875,7 @@ async function init() {
     // button was pressed to replace that list, not to be reminded of it.
     state.uploadOpen = true;
     state.file = null;
+    $("csv-input").value = "";
     showLoadedFile(null);
     $("shelf-row").hidden = true;
     setUploadPanelVisible(true);
